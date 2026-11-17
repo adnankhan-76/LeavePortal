@@ -12,7 +12,7 @@ export async function GET() {
   const session = await getSessionUser();
   if (!session) return NextResponse.json({ success: false, notifications: [] }, { status: 401 });
 
-  const notifications = getNotifications(recipientFor(session));
+  const notifications = await getNotifications(recipientFor(session));
   const unread = notifications.filter((n) => !n.isRead).length;
   return NextResponse.json({ success: true, notifications, unread });
 }
@@ -29,6 +29,6 @@ export async function PATCH(request: Request) {
   } catch {
     // no body = mark all
   }
-  markNotificationsRead(recipientFor(session), id);
+  await markNotificationsRead(recipientFor(session), id);
   return NextResponse.json({ success: true });
 }

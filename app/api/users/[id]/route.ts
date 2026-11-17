@@ -9,13 +9,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
     const { id } = await params;
     const body = await request.json();
-    if (body.email && emailTakenByOther(body.email, id)) {
+    if (body.email && (await emailTakenByOther(body.email, id))) {
       return NextResponse.json(
         { success: false, error: "Another account already uses this email" },
         { status: 409 }
       );
     }
-    const user = updateUser(id, {
+    const user = await updateUser(id, {
       name: body.name,
       email: body.email,
       password: body.password || undefined,

@@ -19,7 +19,7 @@ export async function GET() {
     }
 
     if (parsed.role === "admin") {
-      const admin = getAdminById(parsed.id);
+      const admin = await getAdminById(parsed.id);
       if (!admin) {
         return NextResponse.json({ success: false, user: null }, { status: 401 });
       }
@@ -31,12 +31,12 @@ export async function GET() {
     }
 
     // Regular user
-    const freshUser = getUserById(parsed.id);
+    const freshUser = await getUserById(parsed.id);
     if (!freshUser) {
       return NextResponse.json({ success: false, user: null }, { status: 401 });
     }
 
-    const balances = getUserLeaveBalances(freshUser.id);
+    const balances = await getUserLeaveBalances(freshUser.id);
 
     return NextResponse.json({
       success: true,

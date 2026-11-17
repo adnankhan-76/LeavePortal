@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     }
 
     // 1. Check if it's admin in 'admin' table
-    const admin = getAdminByEmail(targetEmail);
+    const admin = await getAdminByEmail(targetEmail);
     if (admin) {
       if (admin.password !== currentPassword) {
         return NextResponse.json(
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      const updated = updateAdminPassword(admin.id, newPassword);
+      const updated = await updateAdminPassword(admin.id, newPassword);
       if (!updated) {
         return NextResponse.json(
           { success: false, error: "Failed to update admin password in SQLite" },
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Check if it's user in 'users' table
-    const user = getUserByEmail(targetEmail);
+    const user = await getUserByEmail(targetEmail);
     if (user) {
       if (user.password !== currentPassword) {
         return NextResponse.json(
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      const updated = updateUserPassword(user.id, newPassword);
+      const updated = await updateUserPassword(user.id, newPassword);
       if (!updated) {
         return NextResponse.json(
           { success: false, error: "Failed to update user password in SQLite" },

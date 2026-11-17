@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     }
 
     // 1. Check 'admin' table
-    const admin = getAdminByEmail(email);
+    const admin = await getAdminByEmail(email);
     if (admin && admin.password === password) {
       const sessionUser = {
         id: admin.id,
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Check 'users' table
-    const user = getUserByEmail(email);
+    const user = await getUserByEmail(email);
     if (user && user.password === password) {
       const sessionUser = {
         id: user.id,

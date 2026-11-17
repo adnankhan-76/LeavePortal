@@ -6,7 +6,7 @@ export async function GET() {
   if (!(await isAdminRequest())) {
     return NextResponse.json({ success: false, error: "Admins only" }, { status: 403 });
   }
-  return NextResponse.json({ success: true, admins: getAllAdmins() });
+  return NextResponse.json({ success: true, admins: (await getAllAdmins()) });
 }
 
 export async function POST(request: Request) {
@@ -21,13 +21,13 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    if (getAdminByEmail(email) || getUserByEmail(email)) {
+    if ((await getAdminByEmail(email)) || (await getUserByEmail(email))) {
       return NextResponse.json(
         { success: false, error: "An account with this email already exists" },
         { status: 409 }
       );
     }
-    const admin = createAdmin({ name, email, password });
+    const admin = await createAdmin({ name, email, password });
     return NextResponse.json({ success: true, admin }, { status: 201 });
   } catch (error) {
     console.error("Create admin error:", error);

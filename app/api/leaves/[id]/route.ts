@@ -22,7 +22,7 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: "A leave can only be approved or rejected" }, { status: 400 });
     }
 
-    const result = decideLeave(id, status);
+    const result = await decideLeave(id, status);
     if (!result.ok) {
       if (result.reason === "not_found") {
         return NextResponse.json({ success: false, error: "Leave not found" }, { status: 404 });
@@ -38,7 +38,7 @@ export async function PATCH(
     }
     const updated = result.leave;
 
-    createNotification({
+    await createNotification({
       recipient: updated.userId,
       type: status === "Approved" ? "leave_approved" : "leave_rejected",
       message: `Your ${updated.type} (${updated.startDate} to ${updated.endDate}) was ${status.toLowerCase()} by admin`,
@@ -61,7 +61,7 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: "Admins only" }, { status: 403 });
     }
     const { id } = await params;
-    const deleted = deleteLeave(id);
+    const deleted = await deleteLeave(id);
     return NextResponse.json({ success: deleted });
   } catch (error) {
     console.error("Error deleting leave:", error);

@@ -117,7 +117,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.error("Login returned non-JSON, HTTP status", res.status);
       return {
         success: false,
-        error: `Server error (HTTP ${res.status}). Check the terminal running Next.js for the real error (often the better-sqlite3 module).`,
+        error: `Server error (HTTP ${res.status}). Check the terminal running Next.js for the real error (often a database connection problem).`,
       };
     }
 

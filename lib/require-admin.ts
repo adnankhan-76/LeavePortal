@@ -8,7 +8,7 @@ export async function isAdminRequest(): Promise<boolean> {
     const raw = store.get("sika_session")?.value;
     if (!raw) return false;
     const parsed = JSON.parse(raw);
-    return parsed.role === "admin" && !!getAdminById(parsed.id);
+    return parsed.role === "admin" && !!(await getAdminById(parsed.id));
   } catch {
     return false;
   }
@@ -22,10 +22,10 @@ export async function getSessionUser(): Promise<{ id: string; role: "admin" | "u
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed.role === "admin") {
-      const admin = getAdminById(parsed.id);
+      const admin = await getAdminById(parsed.id);
       return admin ? { id: admin.id, role: "admin", name: admin.name } : null;
     }
-    const user = getUserById(parsed.id);
+    const user = await getUserById(parsed.id);
     return user ? { id: user.id, role: "user", name: user.name } : null;
   } catch {
     return null;

@@ -32,12 +32,13 @@ export async function GET(request: Request) {
     let balances = null;
 
     if (targetUserId) {
-      leaves = getLeavesByUserId(targetUserId);
-      stats = getLeaveStats(targetUserId);
-      balances = getUserLeaveBalances(targetUserId);
+      [leaves, stats, balances] = await Promise.all([
+        getLeavesByUserId(targetUserId),
+        getLeaveStats(targetUserId),
+        getUserLeaveBalances(targetUserId),
+      ]);
     } else {
-      leaves = getAllLeaves();
-      stats = getLeaveStats();
+      [leaves, stats] = await Promise.all([getAllLeaves(), getLeaveStats()]);
     }
 
     return NextResponse.json({ success: true, leaves, stats, balances });
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
 
     // Users can only apply for themselves; identity comes from the session, not the request body.
     const userId = session.role === "user" ? session.id : body.userId || session.id;
-    const userRecord = getUserById(userId);
+    const userRecord = await getUserById(userId);
     const employee = userRecord?.name || session.name || "Employee";
 
     if (!type || !startDate || !endDate) {
@@ -73,7 +74,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const newLeave = createLeave({
+    const newLeave = await createLeave({
       userId,
       employee,
       type,
@@ -84,15 +85,17 @@ export async function POST(request: Request) {
     });
 
     // Notify admins (top-right bell) that a leave was applied
-    createNotification({
+    await createNotification({
       recipient: "admin",
       type: "leave_applied",
       message: `${employee} applied for ${type} (${startDate} to ${endDate})`,
       leaveId: newLeave.id,
     });
 
-    const stats = getLeaveStats(session.role === "user" ? userId : undefined);
-    const balances = getUserLeaveBalances(userId);
+    const [stats, balances] = await Promise.all([
+      getLeaveStats(session.role === "user" ? userId : undefined),
+      getUserLeaveBalances(userId),
+    ]);
 
     return NextResponse.json(
       { success: true, leave: newLeave, stats, balances },
@@ -130,7 +133,7 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const result = decideLeave(id, status);
+    const result = await decideLeave(id, status);
     if (!result.ok) {
       if (result.reason === "not_found") {
         return NextResponse.json({ success: false, error: "Leave record not found" }, { status: 404 });
@@ -147,14 +150,14 @@ export async function PATCH(request: Request) {
     const updated = result.leave;
 
     // Notify the employee (top-right bell)
-    createNotification({
+    await createNotification({
       recipient: updated.userId,
       type: status === "Approved" ? "leave_approved" : "leave_rejected",
       message: `Your ${updated.type} (${updated.startDate} to ${updated.endDate}) was ${status.toLowerCase()} by admin`,
       leaveId: updated.id,
     });
 
-    const stats = getLeaveStats();
+    const stats = await getLeaveStats();
     return NextResponse.json({ success: true, leave: updated, stats });
   } catch (error) {
     console.error("Failed to update leave in SQLite:", error);

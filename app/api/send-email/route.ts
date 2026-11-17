@@ -29,7 +29,7 @@ export async function POST(req: Request) {
 
     // 3. Authorization: only the owner of the leave (or an admin) may trigger the email.
     //    Same "not found" answer either way so ids cannot be enumerated.
-    const leave = getLeaveById(leaveId);
+    const leave = await getLeaveById(leaveId);
     if (!leave || (session.role !== "admin" && leave.userId !== session.id)) {
       return NextResponse.json({ success: false, error: "Leave not found" }, { status: 404 });
     }
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
 
     // 5. Build the email on the server
     const link = buildLeaveLink(leave.id);
-    const employeeEmail = getUserById(leave.userId)?.email ?? "";
+    const employeeEmail = (await getUserById(leave.userId))?.email ?? "";
 
     const text = [
       "New Leave Request",

@@ -1,96 +1,121 @@
-import Database from "better-sqlite3";
-import path from "path";
+import { createClient, type InArgs } from "@libsql/client";
 
-const dbPath = path.join(process.cwd(), "sika.db");
-const db = new Database(dbPath);
-
-db.pragma("journal_mode = WAL");
-
-
-
-// Initialize EXACTLY 3 tables: admin, users, and leaves
-db.exec(`
-  CREATE TABLE IF NOT EXISTS admin (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL COLLATE NOCASE,
-    password TEXT NOT NULL,
-    createdAt TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL COLLATE NOCASE,
-    password TEXT NOT NULL,
-    department TEXT DEFAULT 'General',
-    sickLeaves INTEGER NOT NULL DEFAULT 7,
-    casualLeaves INTEGER NOT NULL DEFAULT 14,
-    annualLeaves INTEGER NOT NULL DEFAULT 15,
-    createdAt TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS leaves (
-    id TEXT PRIMARY KEY,
-    userId TEXT NOT NULL,
-    employee TEXT NOT NULL,
-    type TEXT NOT NULL,
-    startDate TEXT NOT NULL,
-    endDate TEXT NOT NULL,
-    days INTEGER NOT NULL,
-    reason TEXT,
-    status TEXT NOT NULL DEFAULT 'Pending',
-    createdAt TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS notifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    recipient TEXT NOT NULL,
-    type TEXT NOT NULL,
-    message TEXT NOT NULL,
-    leaveId TEXT,
-    isRead INTEGER NOT NULL DEFAULT 0,
-    createdAt TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications (recipient, isRead);
-`);
-
-// Migration: users created by first-time Google sign-in wait for the admin to fill their details.
-try {
-  db.exec("ALTER TABLE users ADD COLUMN needsDetails INTEGER NOT NULL DEFAULT 0");
-} catch {
-  // column already exists
+// Production (Vercel): set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN.
+// Local development: falls back to the local sika.db file (still openable in DB Browser for SQLite).
+const url = process.env.TURSO_DATABASE_URL || (process.env.VERCEL ? "" : "file:sika.db");
+if (!url) {
+  throw new Error("TURSO_DATABASE_URL is not set. Add it (and TURSO_AUTH_TOKEN) in Vercel > Settings > Environment Variables.");
 }
 
-// Default admin: admin@sikka.com.pk / 123456
-// Migrate the old default admin (admin@sikka.com) to the .pk email if it exists.
-try {
-  db.prepare("UPDATE admin SET email = ? WHERE id = ? AND email = ?").run(
-    "admin@sikka.com.pk",
-    "admin-1",
-    "admin@sikka.com"
-  );
-} catch {
-  // ignore (e.g. database busy or .pk email already present)
+const db = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
+
+let readyPromise: Promise<void> | undefined;
+function ready(): Promise<void> {
+  if (!readyPromise) {
+    readyPromise = init().catch((err) => {
+      readyPromise = undefined; // retry on the next request
+      throw err;
+    });
+  }
+  return readyPromise;
 }
 
-const existingAdmin = db
-  .prepare("SELECT id FROM admin WHERE email = ?")
-  .get("admin@sikka.com.pk");
-
-if (!existingAdmin) {
-  db.prepare(`
-    INSERT OR IGNORE INTO admin
-    (id, name, email, password, createdAt)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(
-    "admin-1",
-    "System Admin",
-    "admin@sikka.com.pk",
-    "123456",
-    new Date().toISOString()
+async function init() {
+  await db.batch(
+    [
+      `CREATE TABLE IF NOT EXISTS admin (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL COLLATE NOCASE,
+        password TEXT NOT NULL,
+        createdAt TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL COLLATE NOCASE,
+        password TEXT NOT NULL,
+        department TEXT DEFAULT 'General',
+        sickLeaves INTEGER NOT NULL DEFAULT 7,
+        casualLeaves INTEGER NOT NULL DEFAULT 14,
+        annualLeaves INTEGER NOT NULL DEFAULT 15,
+        createdAt TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS leaves (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        employee TEXT NOT NULL,
+        type TEXT NOT NULL,
+        startDate TEXT NOT NULL,
+        endDate TEXT NOT NULL,
+        days INTEGER NOT NULL,
+        reason TEXT,
+        status TEXT NOT NULL DEFAULT 'Pending',
+        createdAt TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recipient TEXT NOT NULL,
+        type TEXT NOT NULL,
+        message TEXT NOT NULL,
+        leaveId TEXT,
+        isRead INTEGER NOT NULL DEFAULT 0,
+        createdAt TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications (recipient, isRead)`,
+    ],
+    "write"
   );
+
+  // Migration: users created by first-time Google sign-in wait for the admin to fill their details.
+  try {
+    await db.execute("ALTER TABLE users ADD COLUMN needsDetails INTEGER NOT NULL DEFAULT 0");
+  } catch {
+    // column already exists
+  }
+
+  // Migrate the old default admin (admin@sikka.com) to the .pk email if it exists.
+  try {
+    await db.execute({
+      sql: "UPDATE admin SET email = ? WHERE id = ? AND email = ?",
+      args: ["admin@sikka.com.pk", "admin-1", "admin@sikka.com"],
+    });
+  } catch {
+    // ignore
+  }
+
+  // Default admin: admin@sikka.com.pk / 123456  (CHANGE THIS PASSWORD after first login)
+  const existing = await db.execute({
+    sql: "SELECT id FROM admin WHERE email = ?",
+    args: ["admin@sikka.com.pk"],
+  });
+  if (existing.rows.length === 0) {
+    await db.execute({
+      sql: "INSERT OR IGNORE INTO admin (id, name, email, password, createdAt) VALUES (?, ?, ?, ?, ?)",
+      args: ["admin-1", "System Admin", "admin@sikka.com.pk", "123456", new Date().toISOString()],
+    });
+  }
 }
+
+// ---- small query helpers (rows converted to plain objects) ----
+async function all<T>(sql: string, args: InArgs = []): Promise<T[]> {
+  await ready();
+  const rs = await db.execute({ sql, args });
+  return rs.rows.map((row) =>
+    Object.fromEntries(rs.columns.map((c, i) => [c, row[i]]))
+  ) as T[];
+}
+
+async function get<T>(sql: string, args: InArgs = []): Promise<T | undefined> {
+  return (await all<T>(sql, args))[0];
+}
+
+async function run(sql: string, args: InArgs = []): Promise<number> {
+  await ready();
+  const rs = await db.execute({ sql, args });
+  return rs.rowsAffected;
+}
+
 export interface AdminRecord {
   id: string;
   name: string;
@@ -125,30 +150,42 @@ export interface LeaveRecord {
   createdAt: string;
 }
 
+export interface NotificationRecord {
+  id: number;
+  recipient: string;
+  type: string;
+  message: string;
+  leaveId: string | null;
+  isRead: number;
+  createdAt: string;
+}
+
 // ==================== 1. ADMIN TABLE FUNCTIONS ====================
-export function getAdminByEmail(email: string): (AdminRecord & { password: string }) | undefined {
-  return db.prepare("SELECT * FROM admin WHERE email = ?").get(email.trim().toLowerCase()) as (AdminRecord & { password: string }) | undefined;
+export async function getAdminByEmail(email: string): Promise<(AdminRecord & { password: string }) | undefined> {
+  return get<AdminRecord & { password: string }>("SELECT * FROM admin WHERE email = ?", [email.trim().toLowerCase()]);
 }
 
-export function getAdminById(id: string): AdminRecord | undefined {
-  return db.prepare("SELECT id, name, email, createdAt FROM admin WHERE id = ?").get(id) as AdminRecord | undefined;
+export async function getAdminById(id: string): Promise<AdminRecord | undefined> {
+  return get<AdminRecord>("SELECT id, name, email, createdAt FROM admin WHERE id = ?", [id]);
 }
 
-export function updateAdminPassword(id: string, newPassword: string): boolean {
-  const result = db.prepare("UPDATE admin SET password = ? WHERE id = ?").run(newPassword, id);
-  return result.changes > 0;
+export async function updateAdminPassword(id: string, newPassword: string): Promise<boolean> {
+  return (await run("UPDATE admin SET password = ? WHERE id = ?", [newPassword, id])) > 0;
 }
 
 // ==================== 2. USERS TABLE FUNCTIONS ====================
-export function getUserByEmail(email: string): (UserRecord & { password: string }) | undefined {
-  return db.prepare("SELECT * FROM users WHERE email = ?").get(email.trim().toLowerCase()) as (UserRecord & { password: string }) | undefined;
+export async function getUserByEmail(email: string): Promise<(UserRecord & { password: string }) | undefined> {
+  return get<UserRecord & { password: string }>("SELECT * FROM users WHERE email = ?", [email.trim().toLowerCase()]);
 }
 
-export function getUserById(id: string): UserRecord | undefined {
-  return db.prepare("SELECT id, name, email, department, sickLeaves, casualLeaves, annualLeaves, needsDetails, createdAt FROM users WHERE id = ?").get(id) as UserRecord | undefined;
+export async function getUserById(id: string): Promise<UserRecord | undefined> {
+  return get<UserRecord>(
+    "SELECT id, name, email, department, sickLeaves, casualLeaves, annualLeaves, needsDetails, createdAt FROM users WHERE id = ?",
+    [id]
+  );
 }
 
-export function createUser(data: {
+export async function createUser(data: {
   name: string;
   email: string;
   password: string;
@@ -156,7 +193,7 @@ export function createUser(data: {
   sickLeaves?: number;
   casualLeaves?: number;
   annualLeaves?: number;
-}): UserRecord {
+}): Promise<UserRecord> {
   const id = `usr-${Math.floor(1000 + Math.random() * 9000)}`;
   const record = {
     id,
@@ -170,10 +207,21 @@ export function createUser(data: {
     createdAt: new Date().toISOString(),
   };
 
-  db.prepare(`
-    INSERT INTO users (id, name, email, password, department, sickLeaves, casualLeaves, annualLeaves, createdAt)
-    VALUES (@id, @name, @email, @password, @department, @sickLeaves, @casualLeaves, @annualLeaves, @createdAt)
-  `).run(record);
+  await run(
+    `INSERT INTO users (id, name, email, password, department, sickLeaves, casualLeaves, annualLeaves, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      record.id,
+      record.name,
+      record.email,
+      record.password,
+      record.department,
+      record.sickLeaves,
+      record.casualLeaves,
+      record.annualLeaves,
+      record.createdAt,
+    ]
+  );
 
   return {
     id: record.id,
@@ -187,29 +235,30 @@ export function createUser(data: {
   };
 }
 
-export function updateUserPassword(id: string, newPassword: string): boolean {
-  const result = db.prepare("UPDATE users SET password = ? WHERE id = ?").run(newPassword, id);
-  return result.changes > 0;
+export async function updateUserPassword(id: string, newPassword: string): Promise<boolean> {
+  return (await run("UPDATE users SET password = ? WHERE id = ?", [newPassword, id])) > 0;
 }
 
-export function getAllUsers(): UserRecord[] {
-  return db.prepare("SELECT id, name, email, department, sickLeaves, casualLeaves, annualLeaves, needsDetails, createdAt FROM users ORDER BY createdAt DESC").all() as UserRecord[];
+export async function getAllUsers(): Promise<UserRecord[]> {
+  return all<UserRecord>(
+    "SELECT id, name, email, department, sickLeaves, casualLeaves, annualLeaves, needsDetails, createdAt FROM users ORDER BY createdAt DESC"
+  );
 }
 
 // ==================== 3. LEAVES TABLE FUNCTIONS ====================
-export function getAllLeaves(): LeaveRecord[] {
-  return db.prepare("SELECT * FROM leaves ORDER BY createdAt DESC, id DESC").all() as LeaveRecord[];
+export async function getAllLeaves(): Promise<LeaveRecord[]> {
+  return all<LeaveRecord>("SELECT * FROM leaves ORDER BY createdAt DESC, id DESC");
 }
 
-export function getLeavesByUserId(userId: string): LeaveRecord[] {
-  return db.prepare("SELECT * FROM leaves WHERE userId = ? ORDER BY createdAt DESC, id DESC").all(userId) as LeaveRecord[];
+export async function getLeavesByUserId(userId: string): Promise<LeaveRecord[]> {
+  return all<LeaveRecord>("SELECT * FROM leaves WHERE userId = ? ORDER BY createdAt DESC, id DESC", [userId]);
 }
 
-export function getLeaveById(id: string): LeaveRecord | undefined {
-  return db.prepare("SELECT * FROM leaves WHERE id = ?").get(id) as LeaveRecord | undefined;
+export async function getLeaveById(id: string): Promise<LeaveRecord | undefined> {
+  return get<LeaveRecord>("SELECT * FROM leaves WHERE id = ?", [id]);
 }
 
-export function createLeave(data: {
+export async function createLeave(data: {
   userId: string;
   employee: string;
   type: string;
@@ -217,7 +266,7 @@ export function createLeave(data: {
   endDate: string;
   days?: number;
   reason?: string;
-}): LeaveRecord {
+}): Promise<LeaveRecord> {
   const id = `LV-${Math.floor(100 + Math.random() * 900)}`;
 
   let calculatedDays = data.days || 1;
@@ -241,10 +290,22 @@ export function createLeave(data: {
     createdAt: new Date().toISOString(),
   };
 
-  db.prepare(`
-    INSERT INTO leaves (id, userId, employee, type, startDate, endDate, days, reason, status, createdAt)
-    VALUES (@id, @userId, @employee, @type, @startDate, @endDate, @days, @reason, @status, @createdAt)
-  `).run(record);
+  await run(
+    `INSERT INTO leaves (id, userId, employee, type, startDate, endDate, days, reason, status, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      record.id,
+      record.userId,
+      record.employee,
+      record.type,
+      record.startDate,
+      record.endDate,
+      record.days,
+      record.reason,
+      record.status,
+      record.createdAt,
+    ]
+  );
 
   return record;
 }
@@ -254,61 +315,38 @@ export type DecideResult =
   | { ok: false; reason: "not_found" | "already_decided"; leave?: LeaveRecord };
 
 // A leave can be decided only once: the UPDATE only matches rows that are still 'Pending'.
-export function decideLeave(id: string, status: "Approved" | "Rejected"): DecideResult {
-  const result = db
-    .prepare("UPDATE leaves SET status = ? WHERE id = ? AND status = 'Pending'")
-    .run(status, id);
+export async function decideLeave(id: string, status: "Approved" | "Rejected"): Promise<DecideResult> {
+  const changes = await run("UPDATE leaves SET status = ? WHERE id = ? AND status = 'Pending'", [status, id]);
 
-  const leave = getLeaveById(id);
+  const leave = await getLeaveById(id);
   if (!leave) return { ok: false, reason: "not_found" };
-  if (result.changes === 0) return { ok: false, reason: "already_decided", leave };
+  if (changes === 0) return { ok: false, reason: "already_decided", leave };
   return { ok: true, leave };
 }
 
-export function deleteLeave(id: string): boolean {
-  const result = db.prepare("DELETE FROM leaves WHERE id = ?").run(id);
-  return result.changes > 0;
+export async function deleteLeave(id: string): Promise<boolean> {
+  return (await run("DELETE FROM leaves WHERE id = ?", [id])) > 0;
 }
 
-export function getLeaveStats(userId?: string) {
-  if (userId) {
-    const total = db.prepare("SELECT COUNT(*) as count FROM leaves WHERE userId = ?").get(userId) as { count: number };
-    const pending = db.prepare("SELECT COUNT(*) as count FROM leaves WHERE userId = ? AND status = 'Pending'").get(userId) as { count: number };
-    const approved = db.prepare("SELECT COUNT(*) as count FROM leaves WHERE userId = ? AND status = 'Approved'").get(userId) as { count: number };
-    const rejected = db.prepare("SELECT COUNT(*) as count FROM leaves WHERE userId = ? AND status = 'Rejected'").get(userId) as { count: number };
-
-    return {
-      total: total.count,
-      pending: pending.count,
-      approved: approved.count,
-      rejected: rejected.count,
-    };
-  }
-
-  const total = db.prepare("SELECT COUNT(*) as count FROM leaves").get() as { count: number };
-  const pending = db.prepare("SELECT COUNT(*) as count FROM leaves WHERE status = 'Pending'").get() as { count: number };
-  const approved = db.prepare("SELECT COUNT(*) as count FROM leaves WHERE status = 'Approved'").get() as { count: number };
-  const rejected = db.prepare("SELECT COUNT(*) as count FROM leaves WHERE status = 'Rejected'").get() as { count: number };
-
+export async function getLeaveStats(userId?: string) {
+  const row = await get<{ total: number; pending: number; approved: number; rejected: number }>(
+    `SELECT
+       COUNT(*) AS total,
+       COALESCE(SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END), 0) AS pending,
+       COALESCE(SUM(CASE WHEN status = 'Approved' THEN 1 ELSE 0 END), 0) AS approved,
+       COALESCE(SUM(CASE WHEN status = 'Rejected' THEN 1 ELSE 0 END), 0) AS rejected
+     FROM leaves ${userId ? "WHERE userId = ?" : ""}`,
+    userId ? [userId] : []
+  );
   return {
-    total: total.count,
-    pending: pending.count,
-    approved: approved.count,
-    rejected: rejected.count,
+    total: Number(row?.total ?? 0),
+    pending: Number(row?.pending ?? 0),
+    approved: Number(row?.approved ?? 0),
+    rejected: Number(row?.rejected ?? 0),
   };
 }
 
-export function getUserLeaveBalances(userId: string) {
-  const user = getUserById(userId);
-  if (!user) return null;
-
-  const usedRows = db.prepare(`
-    SELECT type, SUM(days) as totalDays 
-    FROM leaves 
-    WHERE userId = ? AND status = 'Approved'
-    GROUP BY type
-  `).all(userId) as { type: string; totalDays: number }[];
-
+function computeBalances(user: UserRecord, usedRows: { type: string; totalDays: number }[]) {
   let sickUsed = 0;
   let casualUsed = 0;
   let annualUsed = 0;
@@ -316,44 +354,57 @@ export function getUserLeaveBalances(userId: string) {
 
   for (const row of usedRows) {
     const t = row.type.toLowerCase();
+    const days = Number(row.totalDays);
     if (t.includes("sick")) {
-      sickUsed += row.totalDays;
+      sickUsed += days;
     } else if (t.includes("casual")) {
-      casualUsed += row.totalDays;
+      casualUsed += days;
     } else if (t.includes("annual")) {
-      annualUsed += row.totalDays;
+      annualUsed += days;
     } else if (t.includes("work from home") || t.includes("wfh")) {
-      wfhUsed += row.totalDays;
+      wfhUsed += days;
     }
   }
 
   return {
-    sick: {
-      allowed: user.sickLeaves,
-      used: sickUsed,
-      remaining: Math.max(0, user.sickLeaves - sickUsed),
-    },
-    casual: {
-      allowed: user.casualLeaves,
-      used: casualUsed,
-      remaining: Math.max(0, user.casualLeaves - casualUsed),
-    },
-    annual: {
-      allowed: user.annualLeaves,
-      used: annualUsed,
-      remaining: Math.max(0, user.annualLeaves - annualUsed),
-    },
-    wfh: {
-      used: wfhUsed,
-    },
+    sick: { allowed: user.sickLeaves, used: sickUsed, remaining: Math.max(0, user.sickLeaves - sickUsed) },
+    casual: { allowed: user.casualLeaves, used: casualUsed, remaining: Math.max(0, user.casualLeaves - casualUsed) },
+    annual: { allowed: user.annualLeaves, used: annualUsed, remaining: Math.max(0, user.annualLeaves - annualUsed) },
+    wfh: { used: wfhUsed },
   };
 }
 
-export function getAllUsersWithBalances() {
-  const users = getAllUsers();
+export async function getUserLeaveBalances(userId: string) {
+  const [user, usedRows] = await Promise.all([
+    getUserById(userId),
+    all<{ type: string; totalDays: number }>(
+      `SELECT type, SUM(days) as totalDays FROM leaves WHERE userId = ? AND status = 'Approved' GROUP BY type`,
+      [userId]
+    ),
+  ]);
+  if (!user) return null;
+  return computeBalances(user, usedRows);
+}
+
+export async function getAllUsersWithBalances() {
+  // Two queries total (instead of one per user).
+  const [users, usedRows] = await Promise.all([
+    getAllUsers(),
+    all<{ userId: string; type: string; totalDays: number }>(
+      "SELECT userId, type, SUM(days) AS totalDays FROM leaves WHERE status = 'Approved' GROUP BY userId, type"
+    ),
+  ]);
+
+  const usedByUser = new Map<string, { type: string; totalDays: number }[]>();
+  for (const row of usedRows) {
+    const list = usedByUser.get(row.userId) ?? [];
+    list.push({ type: row.type, totalDays: row.totalDays });
+    usedByUser.set(row.userId, list);
+  }
+
   return users.map((u) => ({
     ...u,
-    balances: getUserLeaveBalances(u.id),
+    balances: computeBalances(u, usedByUser.get(u.id) ?? []),
   }));
 }
 
@@ -369,53 +420,56 @@ export interface NotificationRecord {
 }
 
 // recipient is a user id, or the literal 'admin' (shown to every admin).
-export function createNotification(data: {
+export async function createNotification(data: {
   recipient: string;
   type: string;
   message: string;
   leaveId?: string;
-}) {
-  db.prepare(
-    "INSERT INTO notifications (recipient, type, message, leaveId, isRead, createdAt) VALUES (?, ?, ?, ?, 0, ?)"
-  ).run(data.recipient, data.type, data.message, data.leaveId ?? null, new Date().toISOString());
+}): Promise<void> {
+  await run(
+    "INSERT INTO notifications (recipient, type, message, leaveId, isRead, createdAt) VALUES (?, ?, ?, ?, 0, ?)",
+    [data.recipient, data.type, data.message, data.leaveId ?? null, new Date().toISOString()]
+  );
 }
 
-export function getNotifications(recipient: string, limit = 20): NotificationRecord[] {
-  return db
-    .prepare("SELECT * FROM notifications WHERE recipient = ? ORDER BY id DESC LIMIT ?")
-    .all(recipient, limit) as NotificationRecord[];
+export async function getNotifications(recipient: string, limit = 20): Promise<NotificationRecord[]> {
+  return all<NotificationRecord>("SELECT * FROM notifications WHERE recipient = ? ORDER BY id DESC LIMIT ?", [
+    recipient,
+    limit,
+  ]);
 }
 
-export function markNotificationsRead(recipient: string, id?: number) {
+export async function markNotificationsRead(recipient: string, id?: number): Promise<void> {
   if (id) {
-    db.prepare("UPDATE notifications SET isRead = 1 WHERE recipient = ? AND id = ?").run(recipient, id);
+    await run("UPDATE notifications SET isRead = 1 WHERE recipient = ? AND id = ?", [recipient, id]);
   } else {
-    db.prepare("UPDATE notifications SET isRead = 1 WHERE recipient = ?").run(recipient);
+    await run("UPDATE notifications SET isRead = 1 WHERE recipient = ?", [recipient]);
   }
 }
 
 // First-time Google sign-in: store the @sikka.com.pk email, admin fills the rest later.
-export function createGoogleUser(data: { name: string; email: string }): UserRecord {
+export async function createGoogleUser(data: { name: string; email: string }): Promise<UserRecord> {
   const id = `usr-${Math.floor(10000 + Math.random() * 90000)}`;
   const email = data.email.trim().toLowerCase();
   const name = data.name.trim() || email.split("@")[0];
   const randomPassword = `g-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
   const createdAt = new Date().toISOString();
 
-  db.prepare(`
-    INSERT INTO users (id, name, email, password, department, sickLeaves, casualLeaves, annualLeaves, needsDetails, createdAt)
-    VALUES (?, ?, ?, ?, 'Not assigned', 0, 0, 0, 1, ?)
-  `).run(id, name, email, randomPassword, createdAt);
+  await run(
+    `INSERT INTO users (id, name, email, password, department, sickLeaves, casualLeaves, annualLeaves, needsDetails, createdAt)
+     VALUES (?, ?, ?, ?, 'Not assigned', 0, 0, 0, 1, ?)`,
+    [id, name, email, randomPassword, createdAt]
+  );
 
-  return getUserById(id)!;
+  return (await getUserById(id))!;
 }
 
 // ==================== ADMIN / USER MANAGEMENT ====================
-export function getAllAdmins(): AdminRecord[] {
-  return db.prepare("SELECT id, name, email, createdAt FROM admin ORDER BY createdAt ASC").all() as AdminRecord[];
+export async function getAllAdmins(): Promise<AdminRecord[]> {
+  return all<AdminRecord>("SELECT id, name, email, createdAt FROM admin ORDER BY createdAt ASC");
 }
 
-export function createAdmin(data: { name: string; email: string; password: string }): AdminRecord {
+export async function createAdmin(data: { name: string; email: string; password: string }): Promise<AdminRecord> {
   const id = `adm-${Math.floor(1000 + Math.random() * 9000)}`;
   const record = {
     id,
@@ -424,28 +478,32 @@ export function createAdmin(data: { name: string; email: string; password: strin
     password: data.password,
     createdAt: new Date().toISOString(),
   };
-  db.prepare(
-    "INSERT INTO admin (id, name, email, password, createdAt) VALUES (@id, @name, @email, @password, @createdAt)"
-  ).run(record);
+  await run("INSERT INTO admin (id, name, email, password, createdAt) VALUES (?, ?, ?, ?, ?)", [
+    record.id,
+    record.name,
+    record.email,
+    record.password,
+    record.createdAt,
+  ]);
   return { id: record.id, name: record.name, email: record.email, createdAt: record.createdAt };
 }
 
-export function updateAdmin(
+export async function updateAdmin(
   id: string,
   data: { name?: string; email?: string; password?: string }
-): AdminRecord | null {
-  const current = db.prepare("SELECT * FROM admin WHERE id = ?").get(id) as (AdminRecord & { password: string }) | undefined;
+): Promise<AdminRecord | null> {
+  const current = await get<AdminRecord & { password: string }>("SELECT * FROM admin WHERE id = ?", [id]);
   if (!current) return null;
-  db.prepare("UPDATE admin SET name = ?, email = ?, password = ? WHERE id = ?").run(
+  await run("UPDATE admin SET name = ?, email = ?, password = ? WHERE id = ?", [
     data.name?.trim() || current.name,
     data.email?.trim().toLowerCase() || current.email,
     data.password || current.password,
-    id
-  );
-  return getAdminById(id) || null;
+    id,
+  ]);
+  return (await getAdminById(id)) || null;
 }
 
-export function updateUser(
+export async function updateUser(
   id: string,
   data: {
     name?: string;
@@ -456,29 +514,30 @@ export function updateUser(
     casualLeaves?: number;
     annualLeaves?: number;
   }
-): UserRecord | null {
-  const current = db.prepare("SELECT * FROM users WHERE id = ?").get(id) as (UserRecord & { password: string }) | undefined;
+): Promise<UserRecord | null> {
+  const current = await get<UserRecord & { password: string }>("SELECT * FROM users WHERE id = ?", [id]);
   if (!current) return null;
-  db.prepare(
+  await run(
     `UPDATE users SET name = ?, email = ?, password = ?, department = ?,
-     sickLeaves = ?, casualLeaves = ?, annualLeaves = ?, needsDetails = 0 WHERE id = ?`
-  ).run(
-    data.name?.trim() || current.name,
-    data.email?.trim().toLowerCase() || current.email,
-    data.password || current.password,
-    data.department || current.department,
-    data.sickLeaves ?? current.sickLeaves,
-    data.casualLeaves ?? current.casualLeaves,
-    data.annualLeaves ?? current.annualLeaves,
-    id
+     sickLeaves = ?, casualLeaves = ?, annualLeaves = ?, needsDetails = 0 WHERE id = ?`,
+    [
+      data.name?.trim() || current.name,
+      data.email?.trim().toLowerCase() || current.email,
+      data.password || current.password,
+      data.department || current.department,
+      data.sickLeaves ?? current.sickLeaves,
+      data.casualLeaves ?? current.casualLeaves,
+      data.annualLeaves ?? current.annualLeaves,
+      id,
+    ]
   );
-  return getUserById(id) || null;
+  return (await getUserById(id)) || null;
 }
 
-export function emailTakenByOther(email: string, ownId: string): boolean {
+export async function emailTakenByOther(email: string, ownId: string): Promise<boolean> {
   const e = email.trim().toLowerCase();
-  const a = db.prepare("SELECT id FROM admin WHERE email = ? AND id != ?").get(e, ownId);
-  const u = db.prepare("SELECT id FROM users WHERE email = ? AND id != ?").get(e, ownId);
+  const a = await get("SELECT id FROM admin WHERE email = ? AND id != ?", [e, ownId]);
+  const u = await get("SELECT id FROM users WHERE email = ? AND id != ?", [e, ownId]);
   return !!(a || u);
 }
 

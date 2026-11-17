@@ -46,3 +46,10 @@ next-env.d.ts
 *.db-shm
 *.db-wal
 *.db-journal
+
+# local database / logs / env
+sika.db*
+.env*
+!.env.example
+next-dev.log
+dump.sql

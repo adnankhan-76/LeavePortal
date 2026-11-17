@@ -5,7 +5,7 @@ import { createUser, getAllUsersWithBalances, getUserByEmail, getAdminByEmail } 
 // GET /api/users - List all users from 'users' table with live balances
 export async function GET() {
   try {
-    const users = getAllUsersWithBalances();
+    const users = await getAllUsersWithBalances();
     return NextResponse.json({ success: true, users });
   } catch (error) {
     console.error("Failed to fetch users from SQLite:", error);
@@ -41,14 +41,14 @@ export async function POST(request: Request) {
     }
 
     // Check if email already used in 'admin' or 'users'
-    if (getAdminByEmail(email) || getUserByEmail(email)) {
+    if ((await getAdminByEmail(email)) || (await getUserByEmail(email))) {
       return NextResponse.json(
         { success: false, error: "An account with this email already exists" },
         { status: 409 }
       );
     }
 
-    const newUser = createUser({
+    const newUser = await createUser({
       name,
       email,
       password,

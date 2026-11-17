@@ -141,7 +141,7 @@ export async function GET(request: NextRequest) {
     // 9. Find user in database
     let sessionUser = null;
 
-    const admin = getAdminByEmail(email);
+    const admin = await getAdminByEmail(email);
 
     if (admin) {
       sessionUser = {
@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
         annualLeaves: 0,
       };
     } else {
-      const user = getUserByEmail(email);
+      const user = await getUserByEmail(email);
 
       if (user) {
         sessionUser = {
@@ -173,12 +173,12 @@ export async function GET(request: NextRequest) {
 
     // 10. First-time Google sign-in: save the @sikka.com.pk email, admin fills details later
     if (!sessionUser) {
-      const created = createGoogleUser({
+      const created = await createGoogleUser({
         name: String(profile.name || ""),
         email,
       });
 
-      createNotification({
+      await createNotification({
         recipient: "admin",
         type: "new_user",
         message: `${created.name} (${created.email}) signed in with Google. Please fill in their details and leaves.`,
