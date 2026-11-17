@@ -93,7 +93,7 @@ export default function ChangePasswordModal({ isOpen, onClose }: Props) {
               <CheckCircle2 size={32} />
             </div>
             <h4 className="text-lg font-bold text-white">Password Updated!</h4>
-            <p className="text-xs text-neutral-400">Your new password is now active in SQLite.</p>
+            <p className="text-xs text-neutral-400">Your new password is now active in DataBase.</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">

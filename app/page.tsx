@@ -50,7 +50,7 @@ function LoginForm() {
           </div>
           <h1 className="text-3xl font-black text-white tracking-tight">Sign In</h1>
           <p className="text-neutral-400 text-sm mt-1">
-            Log in as Admin or Employee with your SQLite credentials.
+            Log in as Admin or Employee with your DataBase credentials.
           </p>
         </div>
 

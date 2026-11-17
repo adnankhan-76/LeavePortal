@@ -311,7 +311,7 @@ export default function HomeDashboardPage() {
             {loadingUsers ? (
               <div className="py-14 text-center text-neutral-400 flex items-center justify-center gap-3 text-base">
                 <Loader2 size={22} className="text-[#DB9617]" />
-                Loading users from SQLite...
+                Loading users from DataBase...
               </div>
             ) : filteredUsers.length === 0 ? (
               <div className="py-12 text-center text-neutral-500 text-base">
@@ -468,7 +468,7 @@ export default function HomeDashboardPage() {
           <div>
             <h2 className="text-2xl font-black text-white flex items-center gap-3">
               <CalendarDays size={24} className="text-[#DB9617]" />
-              {isAdmin ? "Recent Leave & WFH Requests (SQLite)" : "My Recent Leaves & WFH"}
+              {isAdmin ? "Recent Leave & WFH Requests " : "My Recent Leaves & WFH"}
             </h2>
             <p className="text-sm text-neutral-400 mt-1">
               {isAdmin
@@ -494,7 +494,7 @@ export default function HomeDashboardPage() {
           ) : leaves.length === 0 ? (
             <div className="py-12 text-center text-neutral-500 text-base">
               {isAdmin
-                ? "No leave requests in SQLite. When employees apply, they will show up here."
+                ? "No leave requests in DataBase. When employees apply, they will show up here."
                 : "You haven't submitted any requests yet. Click 'Apply / View Leaves' to apply for leave or Work From Home."}
             </div>
           ) : (

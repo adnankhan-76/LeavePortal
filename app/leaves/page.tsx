@@ -112,7 +112,7 @@ function LeavesContent() {
           if (data.balances) setBalances(data.balances);
         }
       })
-      .catch((err) => console.error("Failed to load leaves from SQLite:", err))
+      .catch((err) => console.error("Failed to load leaves From Data Base", err))
       .finally(() => {
         if (!ignore) setLoading(false);
       });
@@ -187,8 +187,8 @@ function LeavesContent() {
         if (data.stats) setStats(data.stats);
         showToast(
           newStatus === "Approved"
-            ? `✓ Request ${id} ACCEPTED and saved to SQLite!`
-            : `✗ Request ${id} REJECTED and saved to SQLite!`
+            ? `✓ Request ${id} ACCEPTED and saved to DataBase!`
+            : `✗ Request ${id} REJECTED and saved to DataBase!`
         );
       } else {
         if (res.status === 409 && data.leave) {
@@ -199,8 +199,8 @@ function LeavesContent() {
         alert(data.error || "Failed to update status");
       }
     } catch (err) {
-      console.error("Failed to update leave in SQLite:", err);
-      alert("Error connecting to SQLite database.");
+      console.error("Failed to update leave in Database:", err);
+      alert("Error connecting to database.");
     } finally {
       setActionLoadingId(null);
     }
@@ -515,7 +515,7 @@ function LeavesContent() {
             <p className="text-sm font-bold text-neutral-400">Total Applications</p>
             <div className="mt-3 flex items-baseline gap-2">
               <span className="text-4xl font-black text-white">{stats.total}</span>
-              <span className="text-xs text-neutral-500 font-medium">In SQLite</span>
+              <span className="text-xs text-neutral-500 font-medium">In DataBase</span>
             </div>
           </div>
 
@@ -613,7 +613,7 @@ function LeavesContent() {
           {loading ? (
             <div className="py-16 text-center text-neutral-400 flex flex-col items-center justify-center gap-3 text-base">
               <Loader2 size={32} className="text-[#DB9617]" />
-              <p className="text-base font-medium">Loading records from SQLite database...</p>
+              <p className="text-base font-medium">Loading records from  database...</p>
             </div>
           ) : filteredLeaves.length === 0 ? (
             <div className="py-14 text-center text-neutral-500 text-base">
