@@ -180,6 +180,108 @@ import { useSearchParams, useRouter } from "next/navigation";
     }
   };
 
+  // ---------------------------------------------------------------
+  // Edit modal – displayed when `editing` is set
+  // ---------------------------------------------------------------
+  {editing && (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+      <form onSubmit={handleSaveEdit} className="w-full max-w-lg bg-[#171717] border border-neutral-800 rounded-3xl p-7 space-y-4">
+        <h3 className="text-xl font-black text-white">
+          Edit {editing.kind === "admin" ? "Admin" : "User"}
+        </h3>
+        {editError && (
+          <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400 text-sm font-bold">
+            {editError}
+          </div>
+        )}
+        {([
+          ["name", "Name", "text"],
+          ["email", "Email", "email"],
+          ["password", "New password (leave blank to keep)", "password"],
+        ] as const).map(([k, label, type]) => (
+          <div key={k}>
+            <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
+              {label}
+            </label>
+            <input
+              type={type}
+              required={k !== "password"}
+              value={editing[k as keyof typeof editing] as string}
+              onChange={(e) =>
+                setEditing({ ...editing, [k]: e.target.value } as any)
+              }
+              className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white focus:outline-none focus:border-[#DB9617]"
+            />
+          </div>
+        ))}
+        {editing.kind === "user" && (
+          <>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
+                Department
+              </label>
+              <select
+                value={editing.department}
+                onChange={(e) =>
+                  setEditing({ ...editing, department: e.target.value } as any)
+                }
+                className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white"
+              >
+                {["Engineering", "Marketing", "Human Resources", "Sales", "Operations", "General"].map(
+                  (d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {(["sickLeaves", "casualLeaves", "annualLeaves"] as const).map((k) => (
+                <div key={k}>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
+                    {k.replace("Leaves", "")}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={editing[k] as number}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        [k]: parseInt(e.target.value) || 0,
+                      } as any)
+                    }
+                    className="w-full px-3 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white text-center font-black"
+                  />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        <div className="flex gap-3 pt-2">
+          <button
+            type="submit"
+            disabled={editSaving}
+            className="flex-1 bg-[#DB9617] text-[#0D0D0D] font-black py-3 rounded-xl cursor-pointer disabled:opacity-70"
+          >
+            {editSaving ? "Saving..." : "Save Changes"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(null)}
+            className="px-5 py-3 rounded-xl border border-neutral-700 text-neutral-300 font-bold cursor-pointer"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  )}
+
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
