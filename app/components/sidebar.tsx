@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, CalendarDays, UserPlus, LogOut, Lock } from "./icons";
+import { Home, CalendarDays, UserPlus, LogOut, Lock, Users } from "./icons";
 import { useAuth } from "./auth-context";
 import ChangePasswordModal from "./change-password-modal";
 
@@ -19,7 +19,7 @@ export default function Sidebar() {
     ? [
         { name: "Home", href: "/home", icon: Home },
         { name: "Leaves & WFH", href: "/leaves", icon: CalendarDays },
-        { name: "Add New User", href: "/signup", icon: UserPlus },
+        { name: "Users", href: "/users", icon: Users },
       ]
     : [
         { name: "Home", href: "/home", icon: Home },

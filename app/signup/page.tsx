@@ -16,8 +16,30 @@ import {
   Users,
 } from "../components/icons";
 import type { User } from "../components/auth-context";
+import { useSearchParams, useRouter } from "next/navigation";
 
-export default function AddUserPage() {
+
+
+
+
+
+
+
+
+
+
+  export default function AddUserPage() {
+  const [editId, setEditId] = useState<string | null>(null);
+  const [isEdit, setIsEdit] = useState(false);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  useEffect(() => {
+    const id = searchParams?.get("editId");
+    setEditId(id);
+    setIsEdit(Boolean(id));
+  }, [searchParams]);
+
+
   const [formData, setFormData] = useState<{
     name: string;
     email: string;
@@ -169,8 +191,10 @@ export default function AddUserPage() {
 
     try {
       setIsSubmitting(true);
-      const res = await fetch("/api/users", {
-        method: "POST",
+      const url = isEdit ? `/api/users/${editId}` : "/api/users";
+      const method = isEdit ? "PATCH" : "POST";
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
@@ -182,8 +206,14 @@ export default function AddUserPage() {
 
       const data = await res.json();
       if (data.success) {
-        setSubmittedUser(data.user);
-        setUsersList((prev) => [data.user, ...prev]);
+        if (isEdit) {
+          // Update list in place – Users page will refetch on navigation back
+          setSubmittedUser(null);
+          router.push("/users");
+        } else {
+          setSubmittedUser(data.user);
+          setUsersList((prev) => [data.user, ...prev]);
+        }
         setFormData({
           name: "",
           email: "",
