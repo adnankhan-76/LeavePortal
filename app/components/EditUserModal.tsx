@@ -125,7 +125,7 @@ export default function EditUserModal({
                                 <option value="Engineering">Engineering</option>
                                 <option value="Marketing">Marketing</option>
                                 <option value="Human Resources">Human Resources</option>
-                                <option value="Sales">Sales</option>
+                              <option value="Support">Support</option>
                                 <option value="Operations">Operations</option>
                               </select>
                             </div>

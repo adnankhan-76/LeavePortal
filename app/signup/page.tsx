@@ -17,7 +17,7 @@ import {
 import type { User } from "../components/auth-context";
 import { useSearchParams, useRouter } from "next/navigation";
 
-const DEPARTMENTS = ["Engineering", "Marketing", "Human Resources", "Sales", "Operations", "General"];
+const DEPARTMENTS = ["Engineering", "Marketing", "Human Resources", "Support", "Operations", "General"];
 
 type LeaveValue = number | "";
 
@@ -25,7 +25,7 @@ type FormData = {
   name: string;
   email: string;
   password: string;
-  department: string;
+  
   sickLeaves: LeaveValue;
   casualLeaves: LeaveValue;
   annualLeaves: LeaveValue;
