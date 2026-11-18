@@ -76,38 +76,47 @@ export default function UsersPage() {
       {usersList.length === 0 ? (
         <p className="text-neutral-400">No users found.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-neutral-800 text-sm">
-            <thead className="bg-neutral-900">
-              <tr>
-                <th className="px-4 py-2 text-left">Name</th>
-                <th className="px-4 py-2 text-left">Email</th>
-                <th className="px-4 py-2 text-left">Department</th>
-                <th className="px-4 py-2 text-left">Leaves (S/C/A)</th>
-                <th className="px-4 py-2 text-left">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-800">
-              {usersList.map((u) => (
-                <tr key={u.id} className="bg-neutral-800/30 hover:bg-neutral-800/50">
-                  <td className="px-4 py-2">{u.name}</td>
-                  <td className="px-4 py-2">{u.email}</td>
-                  <td className="px-4 py-2">{u.department}</td>
-                  <td className="px-4 py-2">{`${u.sickLeaves}/${u.casualLeaves}/${u.annualLeaves}`}</td>
-                  <td className="px-4 py-2 space-x-2">
-                    <button
-                      onClick={() => startEdit(u)}
-                      className="bg-[#DB9617] text-[#0D0D0D] font-bold px-3 py-1 rounded"
-                    >
-                      Edit
-                    </button>
-                  </td>
-                </tr>
-              ))}
+     
+<div className="overflow-x-auto">
+  <table className="min-w-full divide-y divide-neutral-800 text-sm">
+    <thead className="bg-neutral-900">
+      <tr>
+        <th className="px-4 py-2 text-left">Name</th>
+        <th className="px-4 py-2 text-left">Email</th>
+        <th className="px-4 py-2 text-left">Department</th>
+        <th className="px-4 py-2 text-left">Sick Leaves</th>
+        <th className="px-4 py-2 text-left">Casual Leaves</th>
+        <th className="px-4 py-2 text-left">Annual Leaves</th>
+        <th className="px-4 py-2 text-left">Actions</th>
+      </tr>
+    </thead>
 
-            </tbody>
-          </table>
-        </div>
+    <tbody className="divide-y divide-neutral-800">
+      {usersList.map((u) => (
+        <tr
+          key={u.id}
+          className="bg-neutral-800/30 hover:bg-neutral-800/50"
+        >
+          <td className="px-4 py-2">{u.name}</td>
+          <td className="px-4 py-2">{u.email}</td>
+          <td className="px-4 py-2">{u.department}</td>
+          <td className="px-4 py-2">{u.sickLeaves}</td>
+          <td className="px-4 py-2">{u.casualLeaves}</td>
+          <td className="px-4 py-2">{u.annualLeaves}</td>
+          <td className="px-4 py-2">
+            <button
+              onClick={() => startEdit(u)}
+              className="bg-[#DB9617] text-[#0D0D0D] font-bold px-3 py-1 rounded"
+            >
+              Edit
+            </button>
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+
       )}
 
       {editError && (
