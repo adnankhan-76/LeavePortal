@@ -7,7 +7,8 @@ import {
   CheckCircle2,
   ArrowRight,
   Loader2,
-} from "../components/icons";
+  Building2,
+} from "./icons";
 import type { User } from "../components/auth-context";
 
 export default function EditUserModal({
@@ -24,7 +25,7 @@ export default function EditUserModal({
       id: "",
       name: "",
       email: "",
-      password: "",
+      role: "user",
       department: "Engineering",
       sickLeaves: 0,
       casualLeaves: 0,
@@ -110,17 +111,25 @@ export default function EditUserModal({
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase text-neutral-400 mb-1">
-                Department
-              </label>
-              <input
-                type="text"
-                value={formData.department}
-                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-white"
-              />
-            </div>
+             <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-2">
+                              Department
+                            </label>
+                            <div className="relative">
+                              <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" size={20} />
+                              <select
+                                value={formData.department}
+                                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                                className="w-full pl-12 pr-4 py-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-base text-white focus:outline-none focus:border-[#DB9617]"
+                              >
+                                <option value="Engineering">Engineering</option>
+                                <option value="Marketing">Marketing</option>
+                                <option value="Human Resources">Human Resources</option>
+                                <option value="Sales">Sales</option>
+                                <option value="Operations">Operations</option>
+                              </select>
+                            </div>
+                          </div>
             <div>
               <label className="block text-xs font-bold uppercase text-neutral-400 mb-1">
                 Sick Leaves

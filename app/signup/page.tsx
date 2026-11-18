@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   UserPlus,
@@ -12,105 +12,112 @@ import {
   ArrowRight,
   CalendarDays,
   Loader2,
-  Database,
   Users,
 } from "../components/icons";
 import type { User } from "../components/auth-context";
 import { useSearchParams, useRouter } from "next/navigation";
 
+const DEPARTMENTS = ["Engineering", "Marketing", "Human Resources", "Sales", "Operations", "General"];
 
+type LeaveValue = number | "";
 
+type FormData = {
+  name: string;
+  email: string;
+  password: string;
+  department: string;
+  sickLeaves: LeaveValue;
+  casualLeaves: LeaveValue;
+  annualLeaves: LeaveValue;
+};
 
+type Editing = FormData & { kind: "user" | "admin"; id: string };
 
+const DEFAULT_FORM: FormData = {
+  name: "",
+  email: "",
+  password: "",
+  department: "Engineering",
+  sickLeaves: 7,
+  casualLeaves: 14,
+  annualLeaves: 15,
+};
 
+// Empty input stays empty while typing; becomes 0 on save
+const parseLeave = (v: string): LeaveValue => (v === "" ? "" : parseInt(v) || 0);
+const toNum = (v: LeaveValue): number => (v === "" ? 0 : v);
 
-
-
-
-
-  export default function AddUserPage() {
-  const [editId, setEditId] = useState<string | null>(null);
-  const [isEdit, setIsEdit] = useState(false);
+function AddUserForm() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  useEffect(() => {
-    const id = searchParams?.get("editId");
-    setEditId(id);
-    setIsEdit(Boolean(id));
-  }, [searchParams]);
+  const editId = searchParams?.get("editId") ?? null;
+  const isEdit = Boolean(editId);
 
-
-  const [formData, setFormData] = useState<{
-    name: string;
-    email: string;
-    password: string;
-    department: string;
-    sickLeaves: number | "";
-    casualLeaves: number | "";
-    annualLeaves: number | "";
-  }>({
-    name: "",
-    email: "",
-    password: "",
-    department: "Engineering",
-    sickLeaves: 7,
-    casualLeaves: 14,
-    annualLeaves: 15,
-  });
+  const [formData, setFormData] = useState<FormData>(DEFAULT_FORM);
+  const [prefilledFor, setPrefilledFor] = useState<string | null>(null);
 
   const [mode, setMode] = useState<"user" | "admin">("user");
   const [adminForm, setAdminForm] = useState({ name: "", email: "", password: "" });
   const [adminsList, setAdminsList] = useState<{ id: string; name: string; email: string }[]>([]);
   const [adminMsg, setAdminMsg] = useState("");
-  type Editing = {
-    kind: "user" | "admin";
-    id: string;
-    name: string;
-    email: string;
-    password: string;
-    department: string;
-    sickLeaves: number | "";
-    casualLeaves: number | "";
-    annualLeaves: number | "";
-  };
+
   const [editing, setEditing] = useState<Editing | null>(null);
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+
   const [usersList, setUsersList] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [submittedUser, setSubmittedUser] = useState<User | null>(null);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Empty input stays empty while typing; becomes 0 on save
-  const parseLeave = (v: string): number | "" => (v === "" ? "" : parseInt(v) || 0);
-  const toNum = (v: number | ""): number => (v === "" ? 0 : v);
-
+  // Load users
   useEffect(() => {
     let ignore = false;
     fetch("/api/users")
       .then((res) => res.json())
       .then((data) => {
-        if (!ignore && data.success) {
-          setUsersList(data.users);
-        }
+        if (!ignore && data.success) setUsersList(data.users);
       })
       .catch((err) => console.error("Failed to load users:", err))
       .finally(() => {
         if (!ignore) setLoadingUsers(false);
       });
-
     return () => {
       ignore = true;
     };
   }, []);
 
+  // Load admins
   useEffect(() => {
+    let ignore = false;
     fetch("/api/admins")
       .then((res) => res.json())
-      .then((data) => data.success && setAdminsList(data.admins))
+      .then((data) => {
+        if (!ignore && data.success) setAdminsList(data.admins);
+      })
       .catch((err) => console.error("Failed to load admins:", err));
+    return () => {
+      ignore = true;
+    };
   }, []);
+
+  // Prefill the main form when arriving with ?editId=...
+  useEffect(() => {
+    if (!editId || prefilledFor === editId) return;
+    const u = usersList.find((x) => x.id === editId);
+    if (!u) return;
+    setFormData({
+      name: u.name,
+      email: u.email,
+      password: "",
+      department: u.department,
+      sickLeaves: u.sickLeaves,
+      casualLeaves: u.casualLeaves,
+      annualLeaves: u.annualLeaves,
+    });
+    setPrefilledFor(editId);
+  }, [editId, usersList, prefilledFor]);
 
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,114 +187,14 @@ import { useSearchParams, useRouter } from "next/navigation";
     }
   };
 
-  // ---------------------------------------------------------------
-  // Edit modal – displayed when `editing` is set
-  // ---------------------------------------------------------------
-  {editing && (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-      <form onSubmit={handleSaveEdit} className="w-full max-w-lg bg-[#171717] border border-neutral-800 rounded-3xl p-7 space-y-4">
-        <h3 className="text-xl font-black text-white">
-          Edit {editing.kind === "admin" ? "Admin" : "User"}
-        </h3>
-        {editError && (
-          <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400 text-sm font-bold">
-            {editError}
-          </div>
-        )}
-        {([
-          ["name", "Name", "text"],
-          ["email", "Email", "email"],
-          ["password", "New password (leave blank to keep)", "password"],
-        ] as const).map(([k, label, type]) => (
-          <div key={k}>
-            <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
-              {label}
-            </label>
-            <input
-              type={type}
-              required={k !== "password"}
-              value={editing[k as keyof typeof editing] as string}
-              onChange={(e) =>
-                setEditing({ ...editing, [k]: e.target.value } as any)
-              }
-              className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white focus:outline-none focus:border-[#DB9617]"
-            />
-          </div>
-        ))}
-        {editing.kind === "user" && (
-          <>
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
-                Department
-              </label>
-              <select
-                value={editing.department}
-                onChange={(e) =>
-                  setEditing({ ...editing, department: e.target.value } as any)
-                }
-                className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white"
-              >
-                {["Engineering", "Marketing", "Human Resources", "Sales", "Operations", "General"].map(
-                  (d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  )
-                )}
-              </select>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              {(["sickLeaves", "casualLeaves", "annualLeaves"] as const).map((k) => (
-                <div key={k}>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
-                    {k.replace("Leaves", "")}
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={editing[k] as number}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) =>
-                      setEditing({
-                        ...editing,
-                        [k]: parseInt(e.target.value) || 0,
-                      } as any)
-                    }
-                    className="w-full px-3 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white text-center font-black"
-                  />
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-        <div className="flex gap-3 pt-2">
-          <button
-            type="submit"
-            disabled={editSaving}
-            className="flex-1 bg-[#DB9617] text-[#0D0D0D] font-black py-3 rounded-xl cursor-pointer disabled:opacity-70"
-          >
-            {editSaving ? "Saving..." : "Save Changes"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditing(null)}
-            className="px-5 py-3 rounded-xl border border-neutral-700 text-neutral-300 font-bold cursor-pointer"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-  )}
-
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    if (!formData.name || !formData.email || !formData.password) {
-      setError("Please fill out name, email, and password.");
+    if (!formData.name || !formData.email || (!isEdit && !formData.password)) {
+      setError(
+        isEdit ? "Please fill out name and email." : "Please fill out name, email, and password."
+      );
       return;
     }
 
@@ -309,24 +216,15 @@ import { useSearchParams, useRouter } from "next/navigation";
       const data = await res.json();
       if (data.success) {
         if (isEdit) {
-          // Update list in place – Users page will refetch on navigation back
           setSubmittedUser(null);
           router.push("/users");
         } else {
           setSubmittedUser(data.user);
           setUsersList((prev) => [data.user, ...prev]);
         }
-        setFormData({
-          name: "",
-          email: "",
-          password: "",
-          department: "Engineering",
-          sickLeaves: 7,
-          casualLeaves: 14,
-          annualLeaves: 15,
-        });
+        setFormData(DEFAULT_FORM);
       } else {
-        setError(data.error || "Failed to add user");
+        setError(data.error || (isEdit ? "Failed to update user" : "Failed to add user"));
       }
     } catch {
       setError("Error saving user to database");
@@ -334,6 +232,12 @@ import { useSearchParams, useRouter } from "next/navigation";
       setIsSubmitting(false);
     }
   };
+
+  const setEditField = (key: "name" | "email" | "password" | "department", value: string) =>
+    setEditing((prev) => (prev ? { ...prev, [key]: value } : prev));
+
+  const setEditLeave = (key: "sickLeaves" | "casualLeaves" | "annualLeaves", value: string) =>
+    setEditing((prev) => (prev ? { ...prev, [key]: parseLeave(value) } : prev));
 
   return (
     <div className="space-y-10 max-w-6xl mx-auto py-2">
@@ -343,19 +247,13 @@ import { useSearchParams, useRouter } from "next/navigation";
           <div className="flex items-center gap-3.5">
             <h1 className="text-4xl font-black text-white tracking-tight flex items-center gap-3">
               <UserPlus className="text-[#DB9617]" size={36} />
-              Add New User
+              {isEdit ? "Edit User" : "Add New User"}
             </h1>
-            {/* <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#DB9617]/15 border border-[#DB9617]/30 text-[#DB9617] text-xs font-bold">
-              <Database size={13} />
-              SQLite Powered
-            </span> */}
           </div>
-          {/* <p className="text-neutral-300 text-base mt-2">
-            Create user accounts with login credentials and set their leave allocations (Sick, Casual, Annual).
-          </p> */}
         </div>
       </div>
 
+      {/* Mode tabs */}
       <div className="flex gap-3">
         {(["user", "admin"] as const).map((m) => (
           <button
@@ -387,10 +285,14 @@ import { useSearchParams, useRouter } from "next/navigation";
                 <p className="text-sm text-neutral-400 mt-0.5">Admins can add and edit users and admins.</p>
               </div>
               {error && (
-                <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 text-sm font-bold">{error}</div>
+                <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 text-sm font-bold">
+                  {error}
+                </div>
               )}
               {adminMsg && (
-                <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-sm font-bold">{adminMsg}</div>
+                <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-sm font-bold">
+                  {adminMsg}
+                </div>
               )}
               {(["name", "email", "password"] as const).map((f) => (
                 <div key={f}>
@@ -436,7 +338,8 @@ import { useSearchParams, useRouter } from "next/navigation";
                 <div className="border-t border-neutral-800 pt-3 flex justify-between font-bold">
                   <span className="text-neutral-400">Allocated Leaves:</span>
                   <span className="text-[#DB9617]">
-                    Sick: {submittedUser.sickLeaves} • Casual: {submittedUser.casualLeaves} • Annual: {submittedUser.annualLeaves}
+                    Sick: {submittedUser.sickLeaves} • Casual: {submittedUser.casualLeaves} • Annual:{" "}
+                    {submittedUser.annualLeaves}
                   </span>
                 </div>
               </div>
@@ -498,33 +401,33 @@ import { useSearchParams, useRouter } from "next/navigation";
                   </label>
                   <div className="relative">
                     <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" size={20} />
-                  <input
-  type="email"
-  required
-  autoComplete="off"
-  placeholder="john@sikka.com"
-  value={formData.email}
-  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-  className="w-full pl-12 pr-4 py-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-base text-white placeholder-neutral-500 focus:outline-none focus:border-[#DB9617]"
-/>
+                    <input
+                      type="email"
+                      required
+                      autoComplete="off"
+                      placeholder="john@sikka.com"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full pl-12 pr-4 py-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-base text-white placeholder-neutral-500 focus:outline-none focus:border-[#DB9617]"
+                    />
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-2">
-                    Login Password
+                    {isEdit ? "New Password (leave blank to keep)" : "Login Password"}
                   </label>
                   <div className="relative">
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" size={20} />
                     <input
-  type="password"
-  required
-  autoComplete="new-password"
-  placeholder="e.g. user123"
-  value={formData.password}
-  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-  className="w-full pl-12 pr-4 py-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-base text-white placeholder-neutral-500 focus:outline-none focus:border-[#DB9617]"
-/>
+                      type="password"
+                      required={!isEdit}
+                      autoComplete="new-password"
+                      placeholder="e.g. user123"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      className="w-full pl-12 pr-4 py-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-base text-white placeholder-neutral-500 focus:outline-none focus:border-[#DB9617]"
+                    />
                   </div>
                 </div>
               </div>
@@ -541,69 +444,45 @@ import { useSearchParams, useRouter } from "next/navigation";
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                     className="w-full pl-12 pr-4 py-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-base text-white focus:outline-none focus:border-[#DB9617]"
                   >
-                    <option value="Engineering">Engineering</option>
-                    <option value="Marketing">Marketing</option>
-                    <option value="Human Resources">Human Resources</option>
-                    <option value="Sales">Sales</option>
-                    <option value="Operations">Operations</option>
+                    {DEPARTMENTS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              {/* Set User Leaves Allocation */}
+              {/* Leave allocations */}
               <div className="pt-4 border-t border-neutral-800">
                 <div className="flex items-center gap-2.5 mb-3.5">
                   <CalendarDays size={20} className="text-[#DB9617]" />
                   <h4 className="text-base font-bold text-white">Set User Leave Allocations</h4>
                 </div>
                 <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-amber-400 mb-1.5">
-                      Sick Leaves
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={formData.sickLeaves}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => setFormData({ ...formData, sickLeaves: parseLeave(e.target.value) })}
-                      className="w-full px-3 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-base text-white font-black text-center focus:outline-none focus:border-[#DB9617]"
-                    />
-                    <span className="text-xs text-neutral-500 block text-center mt-1">e.g. 7 days</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-sky-400 mb-1.5">
-                      Casual Leaves
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={formData.casualLeaves}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => setFormData({ ...formData, casualLeaves: parseLeave(e.target.value) })}
-                      className="w-full px-3 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-base text-white font-black text-center focus:outline-none focus:border-[#DB9617]"
-                    />
-                    <span className="text-xs text-neutral-500 block text-center mt-1">e.g. 14 days</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-emerald-400 mb-1.5">
-                      Annual Leaves
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={formData.annualLeaves}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => setFormData({ ...formData, annualLeaves: parseLeave(e.target.value) })}
-                      className="w-full px-3 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-base text-white font-black text-center focus:outline-none focus:border-[#DB9617]"
-                    />
-                    <span className="text-xs text-neutral-500 block text-center mt-1">e.g. 15 days</span>
-                  </div>
+                  {(
+                    [
+                      ["sickLeaves", "Sick Leaves", "text-amber-400", "e.g. 7 days"],
+                      ["casualLeaves", "Casual Leaves", "text-sky-400", "e.g. 14 days"],
+                      ["annualLeaves", "Annual Leaves", "text-emerald-400", "e.g. 15 days"],
+                    ] as const
+                  ).map(([key, label, color, hint]) => (
+                    <div key={key}>
+                      <label className={`block text-xs font-bold uppercase tracking-wider ${color} mb-1.5`}>
+                        {label}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={formData[key]}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => setFormData({ ...formData, [key]: parseLeave(e.target.value) })}
+                        className="w-full px-3 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-base text-white font-black text-center focus:outline-none focus:border-[#DB9617]"
+                      />
+                      <span className="text-xs text-neutral-500 block text-center mt-1">{hint}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -620,7 +499,7 @@ import { useSearchParams, useRouter } from "next/navigation";
                 ) : (
                   <>
                     <UserPlus size={20} />
-                    Create User 
+                    {isEdit ? "Save Changes" : "Create User"}
                   </>
                 )}
               </button>
@@ -628,7 +507,7 @@ import { useSearchParams, useRouter } from "next/navigation";
           )}
         </div>
 
-        {/* Existing Users in SQLite Column */}
+        {/* Users column */}
         <div className="lg:col-span-5 bg-[#171717] border border-neutral-800 rounded-3xl p-7 shadow-xl space-y-5 flex flex-col">
           <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
             <div className="flex items-center gap-2.5">
@@ -640,7 +519,7 @@ import { useSearchParams, useRouter } from "next/navigation";
           <div className="flex-1 overflow-y-auto max-h-[500px] space-y-3.5 pr-1">
             {loadingUsers ? (
               <div className="py-10 text-center text-neutral-500 flex items-center justify-center gap-2 text-base">
-                <Loader2 size={18} />
+                <Loader2 size={18} className="animate-spin" />
                 Loading users...
               </div>
             ) : usersList.length === 0 ? (
@@ -704,7 +583,10 @@ import { useSearchParams, useRouter } from "next/navigation";
       <div className="bg-[#171717] border border-neutral-800 rounded-3xl p-7 shadow-xl space-y-4">
         <h3 className="text-lg font-bold text-white">Admins ({adminsList.length})</h3>
         {adminsList.map((a) => (
-          <div key={a.id} className="flex items-center justify-between p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800/80">
+          <div
+            key={a.id}
+            className="flex items-center justify-between p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800/80"
+          >
             <div>
               <p className="font-extrabold text-white">{a.name}</p>
               <p className="text-xs text-neutral-400 font-mono">{a.email}</p>
@@ -714,8 +596,15 @@ import { useSearchParams, useRouter } from "next/navigation";
               onClick={() => {
                 setEditError("");
                 setEditing({
-                  kind: "admin", id: a.id, name: a.name, email: a.email, password: "",
-                  department: "", sickLeaves: 0, casualLeaves: 0, annualLeaves: 0,
+                  kind: "admin",
+                  id: a.id,
+                  name: a.name,
+                  email: a.email,
+                  password: "",
+                  department: "",
+                  sickLeaves: 0,
+                  casualLeaves: 0,
+                  annualLeaves: 0,
                 });
               }}
               className="px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider bg-[#DB9617]/20 text-[#DB9617] hover:bg-[#DB9617] hover:text-[#0D0D0D] cursor-pointer transition"
@@ -729,23 +618,35 @@ import { useSearchParams, useRouter } from "next/navigation";
       {/* Edit modal */}
       {editing && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-          <form onSubmit={handleSaveEdit} className="w-full max-w-lg bg-[#171717] border border-neutral-800 rounded-3xl p-7 space-y-4">
-            <h3 className="text-xl font-black text-white">Edit {editing.kind === "admin" ? "Admin" : "User"}</h3>
+          <form
+            onSubmit={handleSaveEdit}
+            className="w-full max-w-lg bg-[#171717] border border-neutral-800 rounded-3xl p-7 space-y-4"
+          >
+            <h3 className="text-xl font-black text-white">
+              Edit {editing.kind === "admin" ? "Admin" : "User"}
+            </h3>
             {editError && (
-              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400 text-sm font-bold">{editError}</div>
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400 text-sm font-bold">
+                {editError}
+              </div>
             )}
-            {([
-              ["name", "Name", "text"],
-              ["email", "Email", "email"],
-              ["password", "New password (leave blank to keep)", "password"],
-            ] as const).map(([k, label, type]) => (
+            {(
+              [
+                ["name", "Name", "text"],
+                ["email", "Email", "email"],
+                ["password", "New password (leave blank to keep)", "password"],
+              ] as const
+            ).map(([k, label, type]) => (
               <div key={k}>
-                <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">{label}</label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
+                  {label}
+                </label>
                 <input
                   type={type}
                   required={k !== "password"}
+                  autoComplete={k === "password" ? "new-password" : "off"}
                   value={editing[k]}
-                  onChange={(e) => setEditing({ ...editing, [k]: e.target.value })}
+                  onChange={(e) => setEditField(k, e.target.value)}
                   className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white focus:outline-none focus:border-[#DB9617]"
                 />
               </div>
@@ -753,14 +654,18 @@ import { useSearchParams, useRouter } from "next/navigation";
             {editing.kind === "user" && (
               <>
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">Department</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
+                    Department
+                  </label>
                   <select
                     value={editing.department}
-                    onChange={(e) => setEditing({ ...editing, department: e.target.value })}
+                    onChange={(e) => setEditField("department", e.target.value)}
                     className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white"
                   >
-                    {["Engineering", "Marketing", "Human Resources", "Sales", "Operations", "General"].map((d) => (
-                      <option key={d} value={d}>{d}</option>
+                    {DEPARTMENTS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -776,7 +681,7 @@ import { useSearchParams, useRouter } from "next/navigation";
                         max={100}
                         value={editing[k]}
                         onFocus={(e) => e.target.select()}
-                        onChange={(e) => setEditing({ ...editing, [k]: parseLeave(e.target.value) })}
+                        onChange={(e) => setEditLeave(k, e.target.value)}
                         className="w-full px-3 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white text-center font-black"
                       />
                     </div>
@@ -785,10 +690,18 @@ import { useSearchParams, useRouter } from "next/navigation";
               </>
             )}
             <div className="flex gap-3 pt-2">
-              <button type="submit" disabled={editSaving} className="flex-1 bg-[#DB9617] text-[#0D0D0D] font-black py-3 rounded-xl cursor-pointer disabled:opacity-70">
+              <button
+                type="submit"
+                disabled={editSaving}
+                className="flex-1 bg-[#DB9617] text-[#0D0D0D] font-black py-3 rounded-xl cursor-pointer disabled:opacity-70"
+              >
                 {editSaving ? "Saving..." : "Save Changes"}
               </button>
-              <button type="button" onClick={() => setEditing(null)} className="px-5 py-3 rounded-xl border border-neutral-700 text-neutral-300 font-bold cursor-pointer">
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                className="px-5 py-3 rounded-xl border border-neutral-700 text-neutral-300 font-bold cursor-pointer"
+              >
                 Cancel
               </button>
             </div>
@@ -796,5 +709,21 @@ import { useSearchParams, useRouter } from "next/navigation";
         </div>
       )}
     </div>
+  );
+}
+
+// useSearchParams() must be rendered under a Suspense boundary
+export default function AddUserPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-20 flex items-center justify-center text-neutral-500 gap-2">
+          <Loader2 size={20} className="animate-spin" />
+          Loading...
+        </div>
+      }
+    >
+      <AddUserForm />
+    </Suspense>
   );
 }
