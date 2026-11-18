@@ -245,7 +245,7 @@ export default function HomeDashboardPage() {
       return (
         <div
           key={stat.label}
-          onClick={() => router.push("/leaves")}
+          onClick={() => { const label = stat.label; if (label.includes('Total Users')) { router.push('/users'); } else if (label.includes('Pending')) { router.push('/leaves?status=Pending'); } else if (label.includes('Approved')) { router.push('/leaves?status=Approved'); } else if (label.includes('Rejected')) { router.push('/leaves?status=Rejected'); } else { router.push('/leaves'); } } }
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {

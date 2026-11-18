@@ -88,6 +88,18 @@ function LeavesContent() {
   const [balances, setBalances] = useState<UserBalances | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"All" | "Pending" | "Approved" | "Rejected">("All");
+
+  // Sync filter with URL query param 'status' if present
+  useEffect(() => {
+    const status = searchParams.get("status");
+    if (status) {
+      const lower = status.toLowerCase();
+      if (lower === "pending") setFilter("Pending");
+      else if (lower === "approved") setFilter("Approved");
+      else if (lower === "rejected") setFilter("Rejected");
+      else if (lower === "all") setFilter("All");
+    }
+  }, [searchParams]);
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [pickedLeave, setSelectedLeave] = useState<LeaveItem | null>(null);
@@ -509,6 +521,7 @@ function LeavesContent() {
       )}
 
       {/* Admin Summary Stats Cards */}
+{/*       
       {isAdmin && (
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
           <div className="bg-[#171717] border border-neutral-800 rounded-3xl p-6">
@@ -552,7 +565,7 @@ function LeavesContent() {
             </div>
           </div>
         </div>
-      )}
+      )} */}
 
       {/* Main Table Card */}
       <div className="bg-[#171717] border border-neutral-800 rounded-3xl p-7 space-y-6 shadow-xl">
