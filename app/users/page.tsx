@@ -5,6 +5,7 @@ import EditUserModal from "../components/EditUserModal";
 import { useState, useEffect } from "react";
 import { Users, Loader2 } from "../components/icons";
 import Link from "next/link";
+import { useAuth } from "../components/auth-context";
 import type { User } from "../components/auth-context";
 
 // Simple Users list with inline edit
@@ -14,6 +15,8 @@ export default function UsersPage() {
   const [editError, setEditError] = useState("");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { user: currentUser } = useAuth();
 
   useEffect(() => {
     let ignore = false;
@@ -35,6 +38,32 @@ export default function UsersPage() {
     setSelectedUser(u);
     setModalOpen(true);
     // No need to set error here as modal handles its own errors
+  };
+
+  const handleDelete = async (u: User) => {
+    if (
+      !window.confirm(
+        `Delete ${u.name} (${u.email})? This also removes all of their leave requests and notifications. This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    setEditError("");
+    setDeletingId(u.id);
+    try {
+      const res = await fetch(`/api/users/${u.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        setEditError(data.error || "Failed to delete user");
+        return;
+      }
+      setUsersList((prev) => prev.filter((x) => x.id !== u.id));
+    } catch (err) {
+      console.error("Failed to delete user:", err);
+      setEditError("Failed to delete user");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const handleModalSaved = (updated: User) => {
@@ -83,6 +112,7 @@ export default function UsersPage() {
       <tr>
         <th className="px-4 py-2 text-left">Name</th>
         <th className="px-4 py-2 text-left">Email</th>
+        <th className="px-4 py-2 text-left">Role</th>
         <th className="px-4 py-2 text-left">Department</th>
         <th className="px-4 py-2 text-left">Sick Leaves</th>
         <th className="px-4 py-2 text-left">Casual Leaves</th>
@@ -99,17 +129,38 @@ export default function UsersPage() {
         >
           <td className="px-4 py-2">{u.name}</td>
           <td className="px-4 py-2">{u.email}</td>
+          <td className="px-4 py-2">
+            <span
+              className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${
+                u.role === "admin"
+                  ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                  : "bg-neutral-700/40 text-neutral-300"
+              }`}
+            >
+              {u.role || "user"}
+            </span>
+          </td>
           <td className="px-4 py-2">{u.department}</td>
           <td className="px-4 py-2">{u.sickLeaves}</td>
           <td className="px-4 py-2">{u.casualLeaves}</td>
           <td className="px-4 py-2">{u.annualLeaves}</td>
           <td className="px-4 py-2">
-            <button
-              onClick={() => startEdit(u)}
-              className="bg-[#DB9617] text-[#0D0D0D] font-bold px-3 py-1 rounded"
-            >
-              Edit
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => startEdit(u)}
+                className="bg-[#DB9617] text-[#0D0D0D] font-bold px-3 py-1 rounded"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => handleDelete(u)}
+                disabled={deletingId === u.id || currentUser?.id === u.id}
+                title={currentUser?.id === u.id ? "You cannot delete your own account" : undefined}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deletingId === u.id ? "Deleting..." : "Delete"}
+              </button>
+            </div>
           </td>
         </tr>
       ))}

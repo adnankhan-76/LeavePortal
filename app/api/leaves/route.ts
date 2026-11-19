@@ -9,6 +9,7 @@ import {
   getLeaveStats,
   getUserLeaveBalances,
   getUserById,
+  getAdminById,
 } from "@/lib/db";
 
 // GET /api/leaves - Fetch leaves from SQLite (all for admin, personal for regular users)
@@ -38,7 +39,11 @@ export async function GET(request: Request) {
         getUserLeaveBalances(targetUserId),
       ]);
     } else {
-      [leaves, stats] = await Promise.all([getAllLeaves(), getLeaveStats()]);
+      [leaves, stats, balances] = await Promise.all([
+        getAllLeaves(),
+        getLeaveStats(),
+        getUserLeaveBalances(session.id),
+      ]);
     }
 
     return NextResponse.json({ success: true, leaves, stats, balances });
@@ -64,7 +69,7 @@ export async function POST(request: Request) {
 
     // Users can only apply for themselves; identity comes from the session, not the request body.
     const userId = session.role === "user" ? session.id : body.userId || session.id;
-    const userRecord = await getUserById(userId);
+    const userRecord = (await getUserById(userId)) || (await getAdminById(userId));
     const employee = userRecord?.name || session.name || "Employee";
 
     if (!type || !startDate || !endDate) {
@@ -92,6 +97,16 @@ export async function POST(request: Request) {
       leaveId: newLeave.id,
     });
 
+    // If an admin applied on behalf of another user, also notify that user
+    if (session.id !== userId) {
+      await createNotification({
+        recipient: userId,
+        type: "leave_applied",
+        message: `Admin applied for ${type} (${startDate} to ${endDate}) on your behalf`,
+        leaveId: newLeave.id,
+      });
+    }
+
     const [stats, balances] = await Promise.all([
       getLeaveStats(session.role === "user" ? userId : undefined),
       getUserLeaveBalances(userId),
@@ -110,11 +125,11 @@ export async function POST(request: Request) {
   }
 }
 
-// PATCH /api/leaves - Admin Accept or Reject a leave in SQLite
+// PATCH /api/leaves - Admin Accept or Reject a leave in SQLite with optional comment
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { id, status } = body;
+    const { id, status, adminComment } = body;
 
     if (!id || !status || !["Approved", "Rejected", "Pending"].includes(status)) {
       return NextResponse.json(
@@ -126,14 +141,8 @@ export async function PATCH(request: Request) {
     if (!(await isAdminRequest())) {
       return NextResponse.json({ success: false, error: "Admins only" }, { status: 403 });
     }
-    if (status === "Pending") {
-      return NextResponse.json(
-        { success: false, error: "A leave can only be approved or rejected" },
-        { status: 400 }
-      );
-    }
 
-    const result = await decideLeave(id, status);
+    const result = await decideLeave(id, status, adminComment);
     if (!result.ok) {
       if (result.reason === "not_found") {
         return NextResponse.json({ success: false, error: "Leave record not found" }, { status: 404 });
@@ -141,19 +150,20 @@ export async function PATCH(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: `This leave was already ${result.leave?.status.toLowerCase()}. A decision can only be made once.`,
+          error: "Failed to update leave record",
           leave: result.leave,
         },
-        { status: 409 }
+        { status: 400 }
       );
     }
     const updated = result.leave;
 
     // Notify the employee (top-right bell)
+    const commentNote = adminComment?.trim() ? ` (Note: "${adminComment.trim()}")` : "";
     await createNotification({
       recipient: updated.userId,
-      type: status === "Approved" ? "leave_approved" : "leave_rejected",
-      message: `Your ${updated.type} (${updated.startDate} to ${updated.endDate}) was ${status.toLowerCase()} by admin`,
+      type: status === "Approved" ? "leave_approved" : status === "Rejected" ? "leave_rejected" : "leave_applied",
+      message: `Your ${updated.type} (${updated.startDate} to ${updated.endDate}) status was updated to ${status.toLowerCase()} by admin${commentNote}`,
       leaveId: updated.id,
     });
 

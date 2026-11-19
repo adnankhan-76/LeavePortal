@@ -29,6 +29,7 @@ interface LeaveItem {
   days: number;
   reason: string;
   status: "Pending" | "Approved" | "Rejected";
+  adminComment?: string | null;
 }
 
 interface UserItem {
@@ -121,24 +122,28 @@ export default function HomeDashboardPage() {
     return () => window.removeEventListener("sika:notification", reload);
   }, [isAdmin]);
 
-  const handleStatusUpdate = async (id: string, newStatus: "Approved" | "Rejected") => {
+  const [decisionModal, setDecisionModal] = useState<{
+    leave: LeaveItem;
+    targetStatus: "Approved" | "Rejected";
+  } | null>(null);
+  const [decisionComment, setDecisionComment] = useState("");
+
+  const handleStatusUpdate = async (id: string, newStatus: "Approved" | "Rejected", comment?: string) => {
     try {
       setActionId(id);
       const res = await fetch("/api/leaves", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status: newStatus }),
+        body: JSON.stringify({ id, status: newStatus, adminComment: comment ?? "" }),
       });
       const data = await res.json();
       if (data.success) {
         setLeaves((prev) =>
-          prev.map((l) => (l.id === id ? { ...l, status: newStatus } : l))
+          prev.map((l) => (l.id === id ? { ...l, status: newStatus, adminComment: comment ?? l.adminComment } : l))
         );
         if (data.stats) setStats(data.stats);
+        setDecisionModal(null);
       } else {
-        if (res.status === 409 && data.leave) {
-          setLeaves((prev) => prev.map((l) => (l.id === id ? { ...l, status: data.leave.status } : l)));
-        }
         alert(data.error || "Failed to update status");
       }
     } catch (err) {
@@ -535,25 +540,35 @@ export default function HomeDashboardPage() {
                       <td className="py-4 px-5 text-center">
                         {actionId === req.id ? (
                           <span className="text-sm font-bold text-[#DB9617]">Saving...</span>
-                        ) : req.status === "Pending" ? (
-                          <div className="flex items-center justify-center gap-2">
-                            <button
-                              onClick={() => handleStatusUpdate(req.id, "Approved")}
-                              className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-black font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
-                            >
-                              <Check size={14} />
-                              Accept
-                            </button>
-                            <button
-                              onClick={() => handleStatusUpdate(req.id, "Rejected")}
-                              className="px-3 py-1.5 rounded-xl bg-rose-500/20 text-rose-400 hover:bg-rose-500 hover:text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
-                            >
-                              <X size={14} />
-                              Reject
-                            </button>
-                          </div>
                         ) : (
-                          <span className="text-sm font-semibold text-neutral-400">{req.status}</span>
+                          <div className="flex items-center justify-center gap-2">
+                            {req.status !== "Approved" && (
+                              <button
+                                onClick={() => {
+                                  setDecisionModal({ leave: req, targetStatus: "Approved" });
+                                  setDecisionComment(req.adminComment || "");
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-black font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
+                                title={req.status === "Rejected" ? "Change to Approved" : "Accept Request"}
+                              >
+                                <Check size={14} />
+                                {req.status === "Rejected" ? "Approve" : "Accept"}
+                              </button>
+                            )}
+                            {req.status !== "Rejected" && (
+                              <button
+                                onClick={() => {
+                                  setDecisionModal({ leave: req, targetStatus: "Rejected" });
+                                  setDecisionComment(req.adminComment || "");
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-rose-500/20 text-rose-400 hover:bg-rose-500 hover:text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
+                                title={req.status === "Approved" ? "Change to Rejected" : "Reject Request"}
+                              >
+                                <X size={14} />
+                                {req.status === "Approved" ? "Reject" : "Reject"}
+                              </button>
+                            )}
+                          </div>
                         )}
                       </td>
                     )}
@@ -564,6 +579,106 @@ export default function HomeDashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Decision Modal for Admin */}
+      {decisionModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-[#171717] border border-neutral-800 rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`p-2.5 rounded-2xl ${
+                    decisionModal.targetStatus === "Approved"
+                      ? "bg-emerald-500/10 text-emerald-400"
+                      : "bg-rose-500/10 text-rose-400"
+                  }`}
+                >
+                  {decisionModal.targetStatus === "Approved" ? <Check size={22} /> : <X size={22} />}
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-white">
+                    {decisionModal.targetStatus === "Approved" ? "Accept Request" : "Reject Request"}
+                  </h3>
+                  <p className="text-xs font-mono text-neutral-400 mt-0.5">{decisionModal.leave.id}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDecisionModal(null)}
+                className="text-neutral-400 hover:text-white cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-white font-bold">{decisionModal.leave.employee}</span>
+                <span>{renderTypeBadge(decisionModal.leave.type)}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-neutral-400">
+                <span>{decisionModal.leave.startDate} to {decisionModal.leave.endDate}</span>
+                <span className="font-bold text-white">{decisionModal.leave.days} day(s)</span>
+              </div>
+              <div className="text-xs text-neutral-300 pt-1 border-t border-neutral-800/80">
+                <span className="text-neutral-500 font-semibold">Reason: </span>
+                {decisionModal.leave.reason}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-neutral-300 mb-2">
+                Admin Comment / Note {decisionModal.targetStatus === "Rejected" ? "(Reason for rejection)" : "(Optional note)"}
+              </label>
+              <textarea
+                rows={3}
+                value={decisionComment}
+                onChange={(e) => setDecisionComment(e.target.value)}
+                placeholder={
+                  decisionModal.targetStatus === "Approved"
+                    ? "e.g. Approved. Please ensure tasks and handover are updated."
+                    : "e.g. Rejected due to critical project deadline. Please reschedule."
+                }
+                className="w-full px-4 py-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#DB9617] resize-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setDecisionModal(null)}
+                className="px-4 py-2.5 rounded-xl text-sm font-bold text-neutral-400 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionId === decisionModal.leave.id}
+                onClick={() =>
+                  handleStatusUpdate(
+                    decisionModal.leave.id,
+                    decisionModal.targetStatus,
+                    decisionComment
+                  )
+                }
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition cursor-pointer flex items-center gap-2 text-white shadow-lg ${
+                  decisionModal.targetStatus === "Approved"
+                    ? "bg-emerald-600 hover:bg-emerald-500"
+                    : "bg-rose-600 hover:bg-rose-500"
+                }`}
+              >
+                {actionId === decisionModal.leave.id ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : decisionModal.targetStatus === "Approved" ? (
+                  <Check size={16} />
+                ) : (
+                  <X size={16} />
+                )}
+                {decisionModal.targetStatus === "Approved" ? "Confirm Accept" : "Confirm Reject"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
