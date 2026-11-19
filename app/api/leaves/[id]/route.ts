@@ -9,7 +9,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { status } = body;
+    const { status, adminComment } = body;
 
     if (!status || !["Approved", "Rejected", "Pending"].includes(status)) {
       return NextResponse.json({ success: false, error: "Invalid status" }, { status: 400 });
@@ -18,30 +18,18 @@ export async function PATCH(
     if (!(await isAdminRequest())) {
       return NextResponse.json({ success: false, error: "Admins only" }, { status: 403 });
     }
-    if (status === "Pending") {
-      return NextResponse.json({ success: false, error: "A leave can only be approved or rejected" }, { status: 400 });
-    }
 
-    const result = await decideLeave(id, status);
+    const result = await decideLeave(id, status, adminComment);
     if (!result.ok) {
-      if (result.reason === "not_found") {
-        return NextResponse.json({ success: false, error: "Leave not found" }, { status: 404 });
-      }
-      return NextResponse.json(
-        {
-          success: false,
-          error: `This leave was already ${result.leave?.status.toLowerCase()}. A decision can only be made once.`,
-          leave: result.leave,
-        },
-        { status: 409 }
-      );
+      return NextResponse.json({ success: false, error: "Leave not found" }, { status: 404 });
     }
     const updated = result.leave;
 
+    const commentNote = adminComment?.trim() ? ` (Note: "${adminComment.trim()}")` : "";
     await createNotification({
       recipient: updated.userId,
-      type: status === "Approved" ? "leave_approved" : "leave_rejected",
-      message: `Your ${updated.type} (${updated.startDate} to ${updated.endDate}) was ${status.toLowerCase()} by admin`,
+      type: status === "Approved" ? "leave_approved" : status === "Rejected" ? "leave_rejected" : "leave_applied",
+      message: `Your ${updated.type} (${updated.startDate} to ${updated.endDate}) status was updated to ${status.toLowerCase()} by admin${commentNote}`,
       leaveId: updated.id,
     });
 

@@ -33,6 +33,7 @@ interface LeaveItem {
   days: number;
   reason: string;
   status: "Pending" | "Approved" | "Rejected";
+  adminComment?: string | null;
   createdAt?: string;
 }
 
@@ -105,6 +106,14 @@ function LeavesContent() {
   const [pickedLeave, setSelectedLeave] = useState<LeaveItem | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Decision with comment modal state
+  const [decisionModal, setDecisionModal] = useState<{
+    leave: LeaveItem;
+    targetStatus: "Approved" | "Rejected";
+  } | null>(null);
+  const [decisionComment, setDecisionComment] = useState("");
+  const [detailAdminComment, setDetailAdminComment] = useState("");
 
   // New leave form state
   const [newType, setNewType] = useState("Work From Home");
@@ -190,6 +199,13 @@ function LeavesContent() {
   const deepLinkMissing = !!deepLinkId && !loading && !!user && !deepLinkLeave;
   const selectedLeave = pickedLeave ?? deepLinkLeave;
 
+  // Sync comment input when selectedLeave opens or changes
+  useEffect(() => {
+    if (selectedLeave) {
+      setDetailAdminComment(selectedLeave.adminComment || "");
+    }
+  }, [selectedLeave]);
+
   const closeLeave = () => {
     setSelectedLeave(null);
     if (deepLinkId) router.replace("/leaves", { scroll: false });
@@ -202,36 +218,50 @@ function LeavesContent() {
     }, 3500);
   };
 
-  // Admin Accept or Reject action connected to SQLite
-  const handleStatusUpdate = async (id: string, newStatus: "Approved" | "Rejected") => {
+  const openDecisionModal = (leave: LeaveItem, targetStatus: "Approved" | "Rejected") => {
+    setDecisionModal({ leave, targetStatus });
+    setDecisionComment(leave.adminComment || "");
+  };
+
+  // Admin Accept or Reject action connected to SQLite with comment support & multiple state changes
+  const handleStatusUpdate = async (
+    id: string,
+    newStatus: "Approved" | "Rejected" | "Pending",
+    comment?: string
+  ) => {
     try {
       setActionLoadingId(id);
       const res = await fetch("/api/leaves", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status: newStatus }),
+        body: JSON.stringify({ id, status: newStatus, adminComment: comment ?? "" }),
       });
       const data = await res.json();
 
       if (data.success) {
+        const savedComment = comment ?? data.leave?.adminComment ?? null;
         setLeaves((prev) =>
-          prev.map((l) => (l.id === id ? { ...l, status: newStatus } : l))
+          prev.map((l) =>
+            l.id === id ? { ...l, status: newStatus, adminComment: savedComment } : l
+          )
         );
         if (selectedLeave && selectedLeave.id === id) {
-          setSelectedLeave({ ...selectedLeave, status: newStatus });
+          setSelectedLeave({
+            ...selectedLeave,
+            status: newStatus,
+            adminComment: savedComment,
+          });
         }
         if (data.stats) setStats(data.stats);
         showToast(
           newStatus === "Approved"
             ? `✓ Request ${id} ACCEPTED and saved to DataBase!`
-            : `✗ Request ${id} REJECTED and saved to DataBase!`
+            : newStatus === "Rejected"
+            ? `✗ Request ${id} REJECTED and saved to DataBase!`
+            : `Request ${id} status updated to ${newStatus}!`
         );
+        setDecisionModal(null);
       } else {
-        if (res.status === 409 && data.leave) {
-          // Someone already decided this leave: show the real status
-          setLeaves((prev) => prev.map((l) => (l.id === id ? { ...l, status: data.leave.status } : l)));
-          if (selectedLeave && selectedLeave.id === id) setSelectedLeave({ ...selectedLeave, status: data.leave.status });
-        }
         alert(data.error || "Failed to update status");
       }
     } catch (err) {
@@ -703,7 +733,18 @@ function LeavesContent() {
                       {l.startDate} to {l.endDate}
                     </td>
                     <td className="py-4 px-5 font-bold text-white text-base">{l.days}d</td>
-                    <td className="py-4 px-5 text-neutral-300 text-sm max-w-xs truncate">{l.reason}</td>
+                    <td className="py-4 px-5 text-neutral-300 text-sm max-w-xs">
+                      <div className="truncate" title={l.reason}>{l.reason}</div>
+                      {l.adminComment && (
+                        <div
+                          className="text-xs text-amber-400 mt-1 flex items-start gap-1 font-medium truncate"
+                          title={`Admin Comment: ${l.adminComment}`}
+                        >
+                          <span className="text-[#DB9617] font-bold shrink-0">Admin:</span>
+                          <span className="truncate">{l.adminComment}</span>
+                        </div>
+                      )}
+                    </td>
                     <td className="py-4 px-5">
                       <span
                         className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
@@ -721,7 +762,7 @@ function LeavesContent() {
                       </span>
                     </td>
                     <td className="py-4 px-5">
-                      <div className="flex items-center justify-center gap-2.5">
+                      <div className="flex items-center justify-center gap-2">
                         {/* View Details Button */}
                         <button
                           onClick={() => setSelectedLeave(l)}
@@ -732,32 +773,36 @@ function LeavesContent() {
                           Details
                         </button>
 
-                        {/* Admin Accept / Reject Actions */}
-                        {isAdmin && l.status === "Pending" && (
+                        {/* Admin Accept / Reject Actions (Anytime state change with comment) */}
+                        {isAdmin && (
                           <>
                             {actionLoadingId === l.id ? (
-                              <div className="flex items-center gap-2 text-xs text-[#DB9617]">
-                                <Loader2 size={16} />
+                              <div className="flex items-center gap-2 text-xs text-[#DB9617] px-2">
+                                <Loader2 size={16} className="animate-spin" />
                               </div>
                             ) : (
                               <>
-                                <button
-                                  onClick={() => handleStatusUpdate(l.id, "Approved")}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 shadow-sm"
-                                  title="Accept Request"
-                                >
-                                  <Check size={14} />
-                                  Accept
-                                </button>
+                                {l.status !== "Approved" && (
+                                  <button
+                                    onClick={() => openDecisionModal(l, "Approved")}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 shadow-sm"
+                                    title={l.status === "Rejected" ? "Change to Approved" : "Accept Request"}
+                                  >
+                                    <Check size={14} />
+                                    Accept
+                                  </button>
+                                )}
 
-                                <button
-                                  onClick={() => handleStatusUpdate(l.id, "Rejected")}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 shadow-sm"
-                                  title="Reject Request"
-                                >
-                                  <X size={14} />
-                                  Reject
-                                </button>
+                                {l.status !== "Rejected" && (
+                                  <button
+                                    onClick={() => openDecisionModal(l, "Rejected")}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 shadow-sm"
+                                    title={l.status === "Approved" ? "Change to Rejected" : "Reject Request"}
+                                  >
+                                    <X size={14} />
+                                    Reject
+                                  </button>
+                                )}
                               </>
                             )}
                           </>
@@ -844,10 +889,37 @@ function LeavesContent() {
                   {selectedLeave.reason || "No detailed reason specified."}
                 </div>
               </div>
+
+              {/* Admin Comment Section */}
+              <div>
+                <span className="text-neutral-400 text-xs font-bold uppercase tracking-wider block mb-2">
+                  Admin Comment / Note
+                </span>
+                {isAdmin ? (
+                  <textarea
+                    rows={3}
+                    value={detailAdminComment}
+                    onChange={(e) => setDetailAdminComment(e.target.value)}
+                    placeholder="Enter admin comment or decision reason..."
+                    className="w-full px-4 py-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#DB9617] resize-none"
+                  />
+                ) : selectedLeave.adminComment ? (
+                  <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-neutral-200 text-sm leading-relaxed whitespace-pre-wrap">
+                    <span className="text-[#DB9617] font-bold block text-xs uppercase tracking-wider mb-1">
+                      Decision Note from Admin:
+                    </span>
+                    {selectedLeave.adminComment}
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 text-neutral-500 text-sm italic">
+                    No admin comment provided.
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Modal Actions */}
-            <div className="flex items-center justify-between pt-4 border-t border-neutral-800">
+            <div className="flex items-center justify-between pt-4 border-t border-neutral-800 gap-3">
               <button
                 type="button"
                 onClick={closeLeave}
@@ -856,24 +928,156 @@ function LeavesContent() {
                 Close
               </button>
 
-              {isAdmin && selectedLeave.status === "Pending" && (
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => handleStatusUpdate(selectedLeave.id, "Rejected")}
-                    className="px-5 py-2.5 rounded-xl text-sm font-bold transition cursor-pointer flex items-center gap-2 bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 shadow-sm"
-                  >
-                    <X size={16} />
-                    Reject
-                  </button>
-                  <button
-                    onClick={() => handleStatusUpdate(selectedLeave.id, "Approved")}
-                    className="px-5 py-2.5 rounded-xl text-sm font-bold transition cursor-pointer flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg"
-                  >
-                    <Check size={16} />
-                    Accept
-                  </button>
+              {isAdmin && (
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  {/* Save comment for already-decided request */}
+                  {selectedLeave.status !== "Pending" && (
+                    <button
+                      type="button"
+                      disabled={actionLoadingId === selectedLeave.id}
+                      onClick={() =>
+                        handleStatusUpdate(selectedLeave.id, selectedLeave.status, detailAdminComment)
+                      }
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 cursor-pointer transition shadow-sm"
+                    >
+                      Save Comment
+                    </button>
+                  )}
+
+                  {/* Reject button (always available unless currently Rejected) */}
+                  {selectedLeave.status !== "Rejected" && (
+                    <button
+                      type="button"
+                      disabled={actionLoadingId === selectedLeave.id}
+                      onClick={() =>
+                        handleStatusUpdate(selectedLeave.id, "Rejected", detailAdminComment)
+                      }
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 shadow-sm"
+                    >
+                      <X size={15} />
+                      {selectedLeave.status === "Approved" ? "Change to Reject" : "Reject"}
+                    </button>
+                  )}
+
+                  {/* Accept button (always available unless currently Approved) */}
+                  {selectedLeave.status !== "Approved" && (
+                    <button
+                      type="button"
+                      disabled={actionLoadingId === selectedLeave.id}
+                      onClick={() =>
+                        handleStatusUpdate(selectedLeave.id, "Approved", detailAdminComment)
+                      }
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg"
+                    >
+                      <Check size={15} />
+                      {selectedLeave.status === "Rejected" ? "Change to Approve" : "Accept"}
+                    </button>
+                  )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Decision with Comment Modal for Admin */}
+      {decisionModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-[#171717] border border-neutral-800 rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`p-2.5 rounded-2xl ${
+                    decisionModal.targetStatus === "Approved"
+                      ? "bg-emerald-500/10 text-emerald-400"
+                      : "bg-rose-500/10 text-rose-400"
+                  }`}
+                >
+                  {decisionModal.targetStatus === "Approved" ? <Check size={22} /> : <X size={22} />}
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-white">
+                    {decisionModal.targetStatus === "Approved" ? "Accept Request" : "Reject Request"}
+                  </h3>
+                  <p className="text-xs font-mono text-neutral-400 mt-0.5">{decisionModal.leave.id}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDecisionModal(null)}
+                className="text-neutral-400 hover:text-white cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Request Summary snippet */}
+            <div className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-white font-bold">{decisionModal.leave.employee}</span>
+                <span>{renderTypeBadge(decisionModal.leave.type)}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-neutral-400">
+                <span>{decisionModal.leave.startDate} to {decisionModal.leave.endDate}</span>
+                <span className="font-bold text-white">{decisionModal.leave.days} day(s)</span>
+              </div>
+              <div className="text-xs text-neutral-300 pt-1 border-t border-neutral-800/80">
+                <span className="text-neutral-500 font-semibold">Reason: </span>
+                {decisionModal.leave.reason}
+              </div>
+            </div>
+
+            {/* Admin Comment Input */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-neutral-300 mb-2">
+                Admin Comment / Note {decisionModal.targetStatus === "Rejected" ? "(Reason for rejection)" : "(Optional note)"}
+              </label>
+              <textarea
+                rows={3}
+                value={decisionComment}
+                onChange={(e) => setDecisionComment(e.target.value)}
+                placeholder={
+                  decisionModal.targetStatus === "Approved"
+                    ? "e.g. Approved. Please ensure tasks and handover are updated."
+                    : "e.g. Rejected due to critical project deadline. Please reschedule."
+                }
+                className="w-full px-4 py-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#DB9617] resize-none"
+              />
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setDecisionModal(null)}
+                className="px-4 py-2.5 rounded-xl text-sm font-bold text-neutral-400 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionLoadingId === decisionModal.leave.id}
+                onClick={() =>
+                  handleStatusUpdate(
+                    decisionModal.leave.id,
+                    decisionModal.targetStatus,
+                    decisionComment
+                  )
+                }
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition cursor-pointer flex items-center gap-2 text-white shadow-lg ${
+                  decisionModal.targetStatus === "Approved"
+                    ? "bg-emerald-600 hover:bg-emerald-500"
+                    : "bg-rose-600 hover:bg-rose-500"
+                }`}
+              >
+                {actionLoadingId === decisionModal.leave.id ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : decisionModal.targetStatus === "Approved" ? (
+                  <Check size={16} />
+                ) : (
+                  <X size={16} />
+                )}
+                {decisionModal.targetStatus === "Approved" ? "Confirm Accept" : "Confirm Reject"}
+              </button>
             </div>
           </div>
         </div>

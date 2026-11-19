@@ -52,6 +52,7 @@ async function init() {
         days INTEGER NOT NULL,
         reason TEXT,
         status TEXT NOT NULL DEFAULT 'Pending',
+        adminComment TEXT,
         createdAt TEXT NOT NULL
       )`,
       `CREATE TABLE IF NOT EXISTS notifications (
@@ -78,6 +79,13 @@ async function init() {
   // Migration: add role column (default 'user')
   try {
     await db.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
+  } catch {
+    // column already exists
+  }
+
+  // Migration: add adminComment column to leaves
+  try {
+    await db.execute("ALTER TABLE leaves ADD COLUMN adminComment TEXT");
   } catch {
     // column already exists
   }
@@ -156,6 +164,7 @@ export interface LeaveRecord {
   days: number;
   reason: string;
   status: "Pending" | "Approved" | "Rejected";
+  adminComment?: string | null;
   createdAt: string;
 }
 
@@ -345,16 +354,25 @@ export async function createLeave(data: {
 
 export type DecideResult =
   | { ok: true; leave: LeaveRecord }
-  | { ok: false; reason: "not_found" | "already_decided"; leave?: LeaveRecord };
+  | { ok: false; reason: "not_found"; leave?: LeaveRecord };
 
-// A leave can be decided only once: the UPDATE only matches rows that are still 'Pending'.
-export async function decideLeave(id: string, status: "Approved" | "Rejected"): Promise<DecideResult> {
-  const changes = await run("UPDATE leaves SET status = ? WHERE id = ? AND status = 'Pending'", [status, id]);
+// Admin can decide, approve, reject, or change state multiple times with an optional comment.
+export async function decideLeave(
+  id: string,
+  status: "Approved" | "Rejected" | "Pending",
+  adminComment?: string | null
+): Promise<DecideResult> {
+  const existing = await getLeaveById(id);
+  if (!existing) return { ok: false, reason: "not_found" };
+
+  if (adminComment !== undefined) {
+    await run("UPDATE leaves SET status = ?, adminComment = ? WHERE id = ?", [status, adminComment, id]);
+  } else {
+    await run("UPDATE leaves SET status = ? WHERE id = ?", [status, id]);
+  }
 
   const leave = await getLeaveById(id);
-  if (!leave) return { ok: false, reason: "not_found" };
-  if (changes === 0) return { ok: false, reason: "already_decided", leave };
-  return { ok: true, leave };
+  return { ok: true, leave: leave! };
 }
 
 export async function deleteLeave(id: string): Promise<boolean> {
