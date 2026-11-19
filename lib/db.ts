@@ -606,6 +606,21 @@ export async function updateUser(
   return (await getUserById(id)) || null;
 }
 
+// Deletes a user plus everything that belongs to them (leaves and notifications).
+export async function deleteUser(id: string): Promise<boolean> {
+  await ready();
+  const results = await db.batch(
+    [
+      { sql: "DELETE FROM notifications WHERE recipient = ?", args: [id] },
+      { sql: "DELETE FROM notifications WHERE leaveId IN (SELECT id FROM leaves WHERE userId = ?)", args: [id] },
+      { sql: "DELETE FROM leaves WHERE userId = ?", args: [id] },
+      { sql: "DELETE FROM users WHERE id = ?", args: [id] },
+    ],
+    "write"
+  );
+  return results[results.length - 1].rowsAffected > 0;
+}
+
 export async function emailTakenByOther(email: string, ownId: string): Promise<boolean> {
   const e = email.trim().toLowerCase();
   const a = await get("SELECT id FROM admin WHERE email = ? AND id != ?", [e, ownId]);
