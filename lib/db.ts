@@ -36,6 +36,7 @@ async function init() {
         email TEXT UNIQUE NOT NULL COLLATE NOCASE,
         password TEXT NOT NULL,
         department TEXT DEFAULT 'General',
+        role TEXT NOT NULL DEFAULT 'user',
         sickLeaves INTEGER NOT NULL DEFAULT 7,
         casualLeaves INTEGER NOT NULL DEFAULT 14,
         annualLeaves INTEGER NOT NULL DEFAULT 15,
@@ -74,17 +75,24 @@ async function init() {
     // column already exists
   }
 
-  // Migrate the old default admin (admin@sikka.com) to the .pk email if it exists.
+  // Migration: add role column (default 'user')
+  try {
+    await db.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
+  } catch {
+    // column already exists
+  }
+
+  // Ensure default admin (admin-1) has email admin@sikka.com.pk and password 123456
   try {
     await db.execute({
-      sql: "UPDATE admin SET email = ? WHERE id = ? AND email = ?",
-      args: ["admin@sikka.com.pk", "admin-1", "admin@sikka.com"],
+      sql: "UPDATE admin SET email = ?, password = ? WHERE id = ?",
+      args: ["admin@sikka.com.pk", "123456", "admin-1"],
     });
   } catch {
     // ignore
   }
 
-  // Default admin: admin@sikka.com.pk / 123456  (CHANGE THIS PASSWORD after first login)
+  // Default admin: admin@sikka.com.pk / 123456
   const existing = await db.execute({
     sql: "SELECT id FROM admin WHERE email = ?",
     args: ["admin@sikka.com.pk"],
@@ -130,6 +138,7 @@ export interface UserRecord {
   email: string;
   password?: string;
   department: string;
+  role: string;
   sickLeaves: number;
   casualLeaves: number;
   annualLeaves: number;
@@ -173,6 +182,29 @@ export async function updateAdminPassword(id: string, newPassword: string): Prom
   return (await run("UPDATE admin SET password = ? WHERE id = ?", [newPassword, id])) > 0;
 }
 
+export async function ensureDefaultAdmin(): Promise<void> {
+  try {
+    const existing = await get<AdminRecord & { password: string }>(
+      "SELECT * FROM admin WHERE email = ? OR email = ?",
+      ["admin@sikka.com.pk", "admin@sikka.com"]
+    );
+    if (!existing) {
+      await run(
+        "INSERT INTO admin (id, name, email, password, createdAt) VALUES (?, ?, ?, ?, ?)",
+        ["admin-1", "System Admin", "admin@sikka.com.pk", "123456", new Date().toISOString()]
+      );
+    } else {
+      await run("UPDATE admin SET email = ?, password = ? WHERE id = ?", [
+        "admin@sikka.com.pk",
+        "123456",
+        existing.id,
+      ]);
+    }
+  } catch (err) {
+    console.error("ensureDefaultAdmin error:", err);
+  }
+}
+
 // ==================== 2. USERS TABLE FUNCTIONS ====================
 export async function getUserByEmail(email: string): Promise<(UserRecord & { password: string }) | undefined> {
   return get<UserRecord & { password: string }>("SELECT * FROM users WHERE email = ?", [email.trim().toLowerCase()]);
@@ -180,7 +212,7 @@ export async function getUserByEmail(email: string): Promise<(UserRecord & { pas
 
 export async function getUserById(id: string): Promise<UserRecord | undefined> {
   return get<UserRecord>(
-    "SELECT id, name, email, department, sickLeaves, casualLeaves, annualLeaves, needsDetails, createdAt FROM users WHERE id = ?",
+    "SELECT id, name, email, department, role, sickLeaves, casualLeaves, annualLeaves, needsDetails, createdAt FROM users WHERE id = ?",
     [id]
   );
 }
@@ -228,6 +260,7 @@ export async function createUser(data: {
     name: record.name,
     email: record.email,
     department: record.department,
+    role: "user",
     sickLeaves: record.sickLeaves,
     casualLeaves: record.casualLeaves,
     annualLeaves: record.annualLeaves,
@@ -241,7 +274,7 @@ export async function updateUserPassword(id: string, newPassword: string): Promi
 
 export async function getAllUsers(): Promise<UserRecord[]> {
   return all<UserRecord>(
-    "SELECT id, name, email, department, sickLeaves, casualLeaves, annualLeaves, needsDetails, createdAt FROM users ORDER BY createdAt DESC"
+    "SELECT id, name, email, department, role, sickLeaves, casualLeaves, annualLeaves, needsDetails, createdAt FROM users ORDER BY createdAt DESC"
   );
 }
 
@@ -510,6 +543,7 @@ export async function updateUser(
     email?: string;
     password?: string;
     department?: string;
+    role?: string;
     sickLeaves?: number;
     casualLeaves?: number;
     annualLeaves?: number;
@@ -518,13 +552,14 @@ export async function updateUser(
   const current = await get<UserRecord & { password: string }>("SELECT * FROM users WHERE id = ?", [id]);
   if (!current) return null;
   await run(
-    `UPDATE users SET name = ?, email = ?, password = ?, department = ?,
+    `UPDATE users SET name = ?, email = ?, password = ?, department = ?, role = ?,
      sickLeaves = ?, casualLeaves = ?, annualLeaves = ?, needsDetails = 0 WHERE id = ?`,
     [
       data.name?.trim() || current.name,
       data.email?.trim().toLowerCase() || current.email,
       data.password || current.password,
       data.department || current.department,
+      data.role ?? current.role ?? 'user',
       data.sickLeaves ?? current.sickLeaves,
       data.casualLeaves ?? current.casualLeaves,
       data.annualLeaves ?? current.annualLeaves,

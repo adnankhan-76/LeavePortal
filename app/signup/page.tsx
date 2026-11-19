@@ -25,7 +25,8 @@ type FormData = {
   name: string;
   email: string;
   password: string;
-  
+  department: string;
+  role?: "admin" | "user";
   sickLeaves: LeaveValue;
   casualLeaves: LeaveValue;
   annualLeaves: LeaveValue;
@@ -160,6 +161,7 @@ function AddUserForm() {
               email: editing.email,
               password: editing.password,
               department: editing.department,
+              role: editing.role || "user",
               sickLeaves: toNum(editing.sickLeaves),
               casualLeaves: toNum(editing.casualLeaves),
               annualLeaves: toNum(editing.annualLeaves),
@@ -233,7 +235,7 @@ function AddUserForm() {
     }
   };
 
-  const setEditField = (key: "name" | "email" | "password" | "department", value: string) =>
+  const setEditField = (key: "name" | "email" | "password" | "department" | "role", value: string) =>
     setEditing((prev) => (prev ? { ...prev, [key]: value } : prev));
 
   const setEditLeave = (key: "sickLeaves" | "casualLeaves" | "annualLeaves", value: string) =>
@@ -536,6 +538,11 @@ function AddUserForm() {
                     <div>
                       <p className="font-extrabold text-white text-base">
                         {u.name}
+                        {u.role === "admin" ? (
+                          <span className="ml-2 px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px] font-black uppercase align-middle">
+                            Admin
+                          </span>
+                        ) : null}
                         {u.needsDetails ? (
                           <span className="ml-2 px-2 py-0.5 rounded-md bg-[#DB9617]/20 text-[#DB9617] text-[10px] font-black uppercase align-middle">
                             Details pending
@@ -555,6 +562,7 @@ function AddUserForm() {
                           email: u.email,
                           password: "",
                           department: u.department,
+                          role: (u.role as "admin" | "user") || "user",
                           sickLeaves: u.sickLeaves,
                           casualLeaves: u.casualLeaves,
                           annualLeaves: u.annualLeaves,
@@ -653,21 +661,36 @@ function AddUserForm() {
             ))}
             {editing.kind === "user" && (
               <>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
-                    Department
-                  </label>
-                  <select
-                    value={editing.department}
-                    onChange={(e) => setEditField("department", e.target.value)}
-                    className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white"
-                  >
-                    {DEPARTMENTS.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
+                      Role
+                    </label>
+                    <select
+                      value={editing.role || "user"}
+                      onChange={(e) => setEditField("role", e.target.value)}
+                      className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white focus:outline-none focus:border-[#DB9617]"
+                    >
+                      <option value="user">User</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
+                      Department
+                    </label>
+                    <select
+                      value={editing.department}
+                      onChange={(e) => setEditField("department", e.target.value)}
+                      className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white focus:outline-none focus:border-[#DB9617]"
+                    >
+                      {DEPARTMENTS.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   {(["sickLeaves", "casualLeaves", "annualLeaves"] as const).map((k) => (

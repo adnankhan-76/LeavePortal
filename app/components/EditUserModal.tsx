@@ -8,6 +8,7 @@ import {
   ArrowRight,
   Loader2,
   Building2,
+  Shield,
 } from "./icons";
 import type { User } from "../components/auth-context";
 
@@ -110,26 +111,53 @@ export default function EditUserModal({
               className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-white"
             />
           </div>
+
+          {/* Role + Department row */}
           <div className="grid grid-cols-2 gap-4">
-             <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-2">
-                              Department
-                            </label>
-                            <div className="relative">
-                              <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" size={20} />
-                              <select
-                                value={formData.department}
-                                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                                className="w-full pl-12 pr-4 py-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-base text-white focus:outline-none focus:border-[#DB9617]"
-                              >
-                                <option value="Engineering">Engineering</option>
-                                <option value="Marketing">Marketing</option>
-                                <option value="Human Resources">Human Resources</option>
-                              <option value="Support">Support</option>
-                                <option value="Operations">Operations</option>
-                              </select>
-                            </div>
-                          </div>
+            {/* Role */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-2">
+                Role
+              </label>
+              <div className="relative">
+                <Shield className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" size={18} />
+                <select
+                  value={formData.role}
+                  onChange={(e) =>
+                    setFormData({ ...formData, role: e.target.value as "admin" | "user" })
+                  }
+                  className="w-full pl-12 pr-4 py-3 bg-neutral-800 border border-neutral-700 rounded-2xl text-base text-white focus:outline-none focus:border-[#DB9617]"
+                >
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Department */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-2">
+                Department
+              </label>
+              <div className="relative">
+                <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" size={20} />
+                <select
+                  value={formData.department}
+                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                  className="w-full pl-12 pr-4 py-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-base text-white focus:outline-none focus:border-[#DB9617]"
+                >
+                  <option value="Engineering">Engineering</option>
+                  <option value="Marketing">Marketing</option>
+                  <option value="Human Resources">Human Resources</option>
+                  <option value="Support">Support</option>
+                  <option value="Operations">Operations</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Leave quotas */}
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-bold uppercase text-neutral-400 mb-1">
                 Sick Leaves
@@ -138,7 +166,9 @@ export default function EditUserModal({
                 type="number"
                 min={0}
                 value={formData.sickLeaves as number}
-                onChange={(e) => setFormData({ ...formData, sickLeaves: parseInt(e.target.value) })}
+                onChange={(e) =>
+                  setFormData({ ...formData, sickLeaves: parseInt(e.target.value) })
+                }
                 className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-white"
               />
             </div>
@@ -150,7 +180,9 @@ export default function EditUserModal({
                 type="number"
                 min={0}
                 value={formData.casualLeaves as number}
-                onChange={(e) => setFormData({ ...formData, casualLeaves: parseInt(e.target.value) })}
+                onChange={(e) =>
+                  setFormData({ ...formData, casualLeaves: parseInt(e.target.value) })
+                }
                 className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-white"
               />
             </div>
@@ -162,11 +194,14 @@ export default function EditUserModal({
                 type="number"
                 min={0}
                 value={formData.annualLeaves as number}
-                onChange={(e) => setFormData({ ...formData, annualLeaves: parseInt(e.target.value) })}
+                onChange={(e) =>
+                  setFormData({ ...formData, annualLeaves: parseInt(e.target.value) })
+                }
                 className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-white"
               />
             </div>
           </div>
+
           <div className="flex justify-end gap-3 mt-4">
             <button
               type="button"
@@ -178,8 +213,9 @@ export default function EditUserModal({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="bg-[#DB9617] text-[#0D0D0D] font-bold px-4 py-2 rounded"
+              className="bg-[#DB9617] text-[#0D0D0D] font-bold px-4 py-2 rounded flex items-center gap-2"
             >
+              {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
               {isSubmitting ? "Saving..." : "Save"}
             </button>
           </div>
@@ -188,4 +224,3 @@ export default function EditUserModal({
     </div>
   );
 }
-

@@ -20,6 +20,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       email: body.email,
       password: body.password || undefined,
       department: body.department,
+      role: body.role || undefined,
       sickLeaves: body.sickLeaves === undefined ? undefined : Number(body.sickLeaves),
       casualLeaves: body.casualLeaves === undefined ? undefined : Number(body.casualLeaves),
       annualLeaves: body.annualLeaves === undefined ? undefined : Number(body.annualLeaves),

@@ -11,18 +11,16 @@ export async function GET() {
       return NextResponse.json({ success: false, user: null }, { status: 401 });
     }
 
-    let parsed;
+    let parsed: { id: string; role: string };
     try {
       parsed = JSON.parse(sessionCookie.value);
     } catch {
       return NextResponse.json({ success: false, user: null }, { status: 401 });
     }
 
-    if (parsed.role === "admin") {
-      const admin = await getAdminById(parsed.id);
-      if (!admin) {
-        return NextResponse.json({ success: false, user: null }, { status: 401 });
-      }
+    // 1. Check if ID exists in admin table (admin-1 or any adm-*)
+    const admin = await getAdminById(parsed.id);
+    if (admin) {
       return NextResponse.json({
         success: true,
         user: { ...admin, role: "admin", department: "Administration" },
@@ -30,17 +28,18 @@ export async function GET() {
       });
     }
 
-    // Regular user
+    // 2. Otherwise check users table
     const freshUser = await getUserById(parsed.id);
     if (!freshUser) {
       return NextResponse.json({ success: false, user: null }, { status: 401 });
     }
 
-    const balances = await getUserLeaveBalances(freshUser.id);
+    const effectiveRole = freshUser.role === "admin" ? "admin" : "user";
+    const balances = effectiveRole === "admin" ? null : await getUserLeaveBalances(freshUser.id);
 
     return NextResponse.json({
       success: true,
-      user: { ...freshUser, role: "user" },
+      user: { ...freshUser, role: effectiveRole },
       balances,
     });
   } catch (error) {

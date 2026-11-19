@@ -83,6 +83,7 @@ export default function UsersPage() {
       <tr>
         <th className="px-4 py-2 text-left">Name</th>
         <th className="px-4 py-2 text-left">Email</th>
+        <th className="px-4 py-2 text-left">Role</th>
         <th className="px-4 py-2 text-left">Department</th>
         <th className="px-4 py-2 text-left">Sick Leaves</th>
         <th className="px-4 py-2 text-left">Casual Leaves</th>
@@ -99,6 +100,17 @@ export default function UsersPage() {
         >
           <td className="px-4 py-2">{u.name}</td>
           <td className="px-4 py-2">{u.email}</td>
+          <td className="px-4 py-2">
+            <span
+              className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${
+                u.role === "admin"
+                  ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                  : "bg-neutral-700/40 text-neutral-300"
+              }`}
+            >
+              {u.role || "user"}
+            </span>
+          </td>
           <td className="px-4 py-2">{u.department}</td>
           <td className="px-4 py-2">{u.sickLeaves}</td>
           <td className="px-4 py-2">{u.casualLeaves}</td>
