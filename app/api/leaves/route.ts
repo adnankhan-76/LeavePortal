@@ -9,6 +9,7 @@ import {
   getLeaveStats,
   getUserLeaveBalances,
   getUserById,
+  getAdminById,
 } from "@/lib/db";
 
 // GET /api/leaves - Fetch leaves from SQLite (all for admin, personal for regular users)
@@ -38,7 +39,11 @@ export async function GET(request: Request) {
         getUserLeaveBalances(targetUserId),
       ]);
     } else {
-      [leaves, stats] = await Promise.all([getAllLeaves(), getLeaveStats()]);
+      [leaves, stats, balances] = await Promise.all([
+        getAllLeaves(),
+        getLeaveStats(),
+        getUserLeaveBalances(session.id),
+      ]);
     }
 
     return NextResponse.json({ success: true, leaves, stats, balances });
@@ -64,7 +69,7 @@ export async function POST(request: Request) {
 
     // Users can only apply for themselves; identity comes from the session, not the request body.
     const userId = session.role === "user" ? session.id : body.userId || session.id;
-    const userRecord = await getUserById(userId);
+    const userRecord = (await getUserById(userId)) || (await getAdminById(userId));
     const employee = userRecord?.name || session.name || "Employee";
 
     if (!type || !startDate || !endDate) {
@@ -91,6 +96,16 @@ export async function POST(request: Request) {
       message: `${employee} applied for ${type} (${startDate} to ${endDate})`,
       leaveId: newLeave.id,
     });
+
+    // If an admin applied on behalf of another user, also notify that user
+    if (session.id !== userId) {
+      await createNotification({
+        recipient: userId,
+        type: "leave_applied",
+        message: `Admin applied for ${type} (${startDate} to ${endDate}) on your behalf`,
+        leaveId: newLeave.id,
+      });
+    }
 
     const [stats, balances] = await Promise.all([
       getLeaveStats(session.role === "user" ? userId : undefined),

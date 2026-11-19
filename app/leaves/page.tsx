@@ -112,6 +112,30 @@ function LeavesContent() {
   const [newEndDate, setNewEndDate] = useState("");
   const [newReason, setNewReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedApplicantId, setSelectedApplicantId] = useState("");
+  const [employeesList, setEmployeesList] = useState<
+    { id: string; name: string; email: string; balances: UserBalances }[]
+  >([]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let ignore = false;
+    fetch("/api/users")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!ignore && data.success && Array.isArray(data.users)) {
+          setEmployeesList(data.users);
+        }
+      })
+      .catch((err) => console.error("Failed to load users:", err));
+    return () => {
+      ignore = true;
+    };
+  }, [isAdmin]);
+
+  const selectedEmployee = employeesList.find((u) => u.id === selectedApplicantId);
+  const effectiveBalances =
+    isAdmin && selectedEmployee ? selectedEmployee.balances : balances;
 
   useEffect(() => {
     let ignore = false;
@@ -250,15 +274,15 @@ function LeavesContent() {
     }
 
     if (newType !== "Work From Home") {
-      if (!balances) {
+      if (!effectiveBalances) {
         alert("Leave balances are still loading. Please try again in a moment.");
         return;
       }
 
       const balanceMap: Record<string, number | undefined> = {
-        "Sick Leave": balances.sick?.remaining,
-        "Casual Leave": balances.casual?.remaining,
-        "Annual Leave": balances.annual?.remaining,
+        "Sick Leave": effectiveBalances.sick?.remaining,
+        "Casual Leave": effectiveBalances.casual?.remaining,
+        "Annual Leave": effectiveBalances.annual?.remaining,
       };
 
       const remaining = balanceMap[newType];
@@ -274,6 +298,11 @@ function LeavesContent() {
       }
     }
 
+    const targetUserId =
+      isAdmin && selectedEmployee ? selectedEmployee.id : user?.id;
+    const targetEmployee =
+      isAdmin && selectedEmployee ? selectedEmployee.name : (user?.name || "Employee");
+
     const reason =
       newReason.trim() ||
       (newType === "Work From Home"
@@ -287,8 +316,8 @@ function LeavesContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: user?.id,
-          employee: user?.name || "Employee",
+          userId: targetUserId,
+          employee: targetEmployee,
           type: newType,
           startDate: newStartDate,
           endDate: newEndDate,
@@ -311,6 +340,7 @@ function LeavesContent() {
       setNewEndDate("");
       setNewReason("");
       setNewType("Work From Home");
+      setSelectedApplicantId(user?.id || "");
 
       showToast("Leave request submitted successfully!");
 
@@ -331,6 +361,14 @@ function LeavesContent() {
           setLeaves(refreshed.leaves);
           if (refreshed.stats) setStats(refreshed.stats);
           if (refreshed.balances) setBalances(refreshed.balances);
+          if (isAdmin) {
+            fetch("/api/users")
+              .then((r) => r.json())
+              .then((uData) => {
+                if (uData.success && Array.isArray(uData.users)) setEmployeesList(uData.users);
+              })
+              .catch(() => {});
+          }
         }
       } catch (refreshError) {
         // The request is already saved; a refresh failure should not report submission failure.
@@ -428,15 +466,20 @@ function LeavesContent() {
         </div>
 
         {/* Regular users see Apply button, Admin does NOT */}
-        {!isAdmin && (
+        {/* {!isAdmin && ( */}
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => {
+              if (!selectedApplicantId && user?.id) {
+                setSelectedApplicantId(user.id);
+              }
+              setShowModal(true);
+            }}
             className="inline-flex items-center justify-center gap-2.5 bg-[#DB9617] hover:bg-[#c48512] text-[#0D0D0D] font-extrabold text-base px-2 py-4 rounded-2xl transition shadow-lg cursor-pointer"
           >
             <Plus size={22} />
             Apply Leave / WFH
           </button>
-        )}
+        {/* )} */}
       </div>
 
       {/* If regular user, display personal balance cards: Sick, Casual, Annual, WFH */}
@@ -836,8 +879,8 @@ function LeavesContent() {
         </div>
       )}
 
-      {/* Modal for applying leave (only for regular users) */}
-      {!isAdmin && showModal && (
+      {/* Modal for applying leave */}
+      {showModal && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
           <div className="bg-[#171717] border border-neutral-800 rounded-3xl p-7 sm:p-9 w-full max-w-xl shadow-2xl space-y-6">
             <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
@@ -857,12 +900,31 @@ function LeavesContent() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
                   Applicant
                 </label>
-                <input
-                  type="text"
-                  disabled
-                  value={`${user?.name || "Employee"} (${user?.email || ""})`}
-                  className="w-full px-4 py-3 bg-neutral-900/60 border border-neutral-800 rounded-2xl text-base text-neutral-400 cursor-not-allowed font-medium"
-                />
+                {isAdmin ? (
+                  <select
+                    value={selectedApplicantId || user?.id || ""}
+                    onChange={(e) => setSelectedApplicantId(e.target.value)}
+                    className="w-full px-4 py-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-base text-white focus:outline-none focus:border-[#DB9617] font-medium"
+                  >
+                    <option value={user?.id || ""}>
+                      Myself — {user?.name || "Admin"} ({user?.email || ""})
+                    </option>
+                    {employeesList
+                      .filter((u) => u.id !== user?.id)
+                      .map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name} ({u.email})
+                        </option>
+                      ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    disabled
+                    value={`${user?.name || "Employee"} (${user?.email || ""})`}
+                    className="w-full px-4 py-3 bg-neutral-900/60 border border-neutral-800 rounded-2xl text-base text-neutral-400 cursor-not-allowed font-medium"
+                  />
+                )}
               </div>
 
               <div>
@@ -876,15 +938,14 @@ function LeavesContent() {
                 >
                   <option value="Work From Home">💻 Work From Home (WFH)</option>
                   <option value="Sick Leave">
-                    🤒 Sick Leave {balances ? `(${balances.sick.remaining} days left)` : ""}
+                    🤒 Sick Leave {effectiveBalances ? `(${effectiveBalances.sick.remaining} days left)` : ""}
                   </option>
                   <option value="Casual Leave">
-                    🌴 Casual Leave {balances ? `(${balances.casual.remaining} days left)` : ""}
+                    🌴 Casual Leave {effectiveBalances ? `(${effectiveBalances.casual.remaining} days left)` : ""}
                   </option>
                   <option value="Annual Leave">
-                    🏖️ Annual Leave {balances ? `(${balances.annual.remaining} days left)` : ""}
+                    🏖️ Annual Leave {effectiveBalances ? `(${effectiveBalances.annual.remaining} days left)` : ""}
                   </option>
-                 
                 </select>
               </div>
 

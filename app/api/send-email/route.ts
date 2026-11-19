@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { getSessionUser } from "@/lib/require-admin";
-import { getLeaveById, getUserById } from "@/lib/db";
+import { getLeaveById, getUserById, getAdminById } from "@/lib/db";
 import { isValidLeaveId } from "@/lib/link-safety";
 import { buildLeaveLink, escapeHtml, oneLine } from "@/lib/leave-link";
 
@@ -54,7 +54,8 @@ export async function POST(req: Request) {
 
     // 5. Build the email on the server
     const link = buildLeaveLink(leave.id);
-    const employeeEmail = (await getUserById(leave.userId))?.email ?? "";
+    const userRecord = (await getUserById(leave.userId)) || (await getAdminById(leave.userId));
+    const employeeEmail = userRecord?.email ?? "";
 
     const text = [
       "New Leave Request",

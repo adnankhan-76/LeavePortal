@@ -408,13 +408,32 @@ function computeBalances(user: UserRecord, usedRows: { type: string; totalDays: 
 }
 
 export async function getUserLeaveBalances(userId: string) {
-  const [user, usedRows] = await Promise.all([
+  let [user, usedRows] = await Promise.all([
     getUserById(userId),
     all<{ type: string; totalDays: number }>(
       `SELECT type, SUM(days) as totalDays FROM leaves WHERE userId = ? AND status = 'Approved' GROUP BY type`,
       [userId]
     ),
   ]);
+
+  if (!user) {
+    const admin = await getAdminById(userId);
+    if (admin) {
+      user = {
+        id: admin.id,
+        name: admin.name,
+        email: admin.email,
+        department: "Management",
+        role: "admin",
+        sickLeaves: 7,
+        casualLeaves: 14,
+        annualLeaves: 15,
+        needsDetails: 0,
+        createdAt: admin.createdAt,
+      };
+    }
+  }
+
   if (!user) return null;
   return computeBalances(user, usedRows);
 }
